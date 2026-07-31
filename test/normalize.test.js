@@ -18,3 +18,17 @@ test("removes a Markdown code fence and common indentation", () => {
 
   assert.equal(normalize(input), expected);
 });
+
+test("removes a dollar shell prompt", () => {
+  const input = readExample("shell-prompt-dollar.input.txt");
+  const expected = readExample("shell-prompt-dollar.expected.txt");
+
+  assert.equal(normalize(input), expected);
+});
+
+test("removes an angle shell prompt", () => {
+  const input = readExample("shell-prompt-angle.input.txt");
+  const expected = readExample("shell-prompt-angle.expected.txt");
+
+  assert.equal(normalize(input), expected);
+});

@@ -22,7 +22,10 @@ function normalize(input) {
     ...nonEmptyLines.map((line) => line.match(/^[\t ]*/)[0].length),
   );
 
-  return lines.map((line) => line.slice(commonIndent)).join("\n");
+  return lines
+  .map((line) => line.slice(commonIndent))
+  .map((line) => line.replace(/^[>$]\s+/, ""))
+  .join("\n");
 }
 
 module.exports = { normalize };
