@@ -1,3 +1,26 @@
+function joinContinuations(lines) {
+  const result = [];
+  let current = "";
+
+  for (const line of lines) {
+    const continues = /\\\s*$/.test(line);
+    const segment = line.replace(/\\\s*$/, "").trim();
+
+    current = current ? `${current} ${segment}` : segment;
+
+    if (!continues) {
+      result.push(current);
+      current = "";
+    }
+  }
+
+  if (current) {
+    result.push(current);
+  }
+
+  return result;
+}
+
 function normalize(input) {
   let lines = input.replace(/\r\n/g, "\n").split("\n");
 
@@ -22,10 +45,11 @@ function normalize(input) {
     ...nonEmptyLines.map((line) => line.match(/^[\t ]*/)[0].length),
   );
 
-  return lines
-  .map((line) => line.slice(commonIndent))
-  .map((line) => line.replace(/^[>$]\s+/, ""))
-  .join("\n");
+  const normalizedLines = lines
+    .map((line) => line.slice(commonIndent))
+    .map((line) => line.replace(/^[>$]\s+/, ""));
+
+  return joinContinuations(normalizedLines).join("\n");
 }
 
 module.exports = { normalize };

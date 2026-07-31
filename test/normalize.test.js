@@ -32,3 +32,10 @@ test("removes an angle shell prompt", () => {
 
   assert.equal(normalize(input), expected);
 });
+
+test("joins backslash-continued shell commands", () => {
+  const input = readExample("shell-continuation.input.txt");
+  const expected = readExample("shell-continuation.expected.txt");
+
+  assert.equal(normalize(input), expected);
+});
