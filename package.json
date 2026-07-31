@@ -1,0 +1,24 @@
+{
+  "name": "pastefix",
+  "version": "1.0.0",
+  "description": "A small paste normalizer for AI-generated terminal commands.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ch1nYu/PasteFix.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Ch1nYu/PasteFix/issues"
+  },
+  "homepage": "https://github.com/Ch1nYu/PasteFix#readme"
+}
