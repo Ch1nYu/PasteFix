@@ -37,7 +37,7 @@ public sealed class TrayApplication : ApplicationContext
         _icon.DoubleClick += (_, _) => CleanClipboard();
 
         _window.ClipboardChanged += OnClipboardChanged;
-        _window.HotkeyPressed += () => CleanClipboard();
+        _window.HotkeyPressed += OnHotkeyPressed;
 
         ApplySettings();
     }
@@ -60,6 +60,31 @@ public sealed class TrayApplication : ApplicationContext
         _clipDebounce.Start();
     }
 
+    private void OnHotkeyPressed()
+    {
+        bool changed = CleanClipboard(showNotification: false);
+        SendPaste();
+        _icon.ShowBalloonTip(
+            1200,
+            "Pastefix",
+            changed ? "已清洗並貼上" : "內容已乾淨，已貼上",
+            ToolTipIcon.Info);
+    }
+
+    private static void SendPaste()
+    {
+        const byte vkControl = 0x11;
+        const byte vkV = 0x56;
+        const uint keyUp = 0x0002;
+        keybd_event(vkControl, 0, 0, UIntPtr.Zero);
+        keybd_event(vkV, 0, 0, UIntPtr.Zero);
+        keybd_event(vkV, 0, keyUp, UIntPtr.Zero);
+        keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
     private void ApplySettings()
     {
         _window.SetClipboardListening(_settings.AutoMonitor);
@@ -80,14 +105,14 @@ public sealed class TrayApplication : ApplicationContext
         _settings.Save();
     }
 
-    private void CleanClipboard(bool showNotification = true)
+    private bool CleanClipboard(bool showNotification = true)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
         {
             Trace("  no text on clipboard");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿中沒有文字", ToolTipIcon.Info);
-            return;
+            return false;
         }
 
         string text = Clipboard.GetText();
@@ -98,7 +123,7 @@ public sealed class TrayApplication : ApplicationContext
         {
             Trace("  no change needed (idempotent)");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
-            return;
+            return false;
         }
 
         Clipboard.SetText(cleaned);
@@ -106,6 +131,7 @@ public sealed class TrayApplication : ApplicationContext
 
         if (showNotification)
             _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);
+        return true;
     }
 
     private static void Trace(string message)
