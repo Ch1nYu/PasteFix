@@ -1,2 +1,8 @@
 Thumbs.db
 .DS_Store
+
+# .NET
+dotnet/**/bin/
+dotnet/**/obj/
+*.user
+dist/
