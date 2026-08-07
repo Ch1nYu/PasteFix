@@ -11,7 +11,6 @@ public sealed class TrayApplication : ApplicationContext
     private readonly Settings _settings;
     private readonly ToolStripMenuItem _autoMonitorItem;
     private readonly ToolStripMenuItem _hotkeyItem;
-    private string? _lastWritten;
 
     public TrayApplication()
     {
@@ -74,25 +73,18 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        Trace($"  text=[{text}] lastWritten=[{_lastWritten}]");
-        if (text == _lastWritten)
-        {
-            Trace("  skip: text == lastWritten");
-            return;
-        }
-
+        Trace($"  text=[{text}]");
         string cleaned = Normalizer.Normalize(text);
         Trace($"  cleaned=[{cleaned}]");
         if (cleaned == text)
         {
-            Trace("  no change needed");
+            Trace("  no change needed (idempotent)");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
             return;
         }
 
-        _lastWritten = cleaned;
         Clipboard.SetText(cleaned);
-        Trace($"  wrote back lastWritten=[{cleaned}]");
+        Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
             _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);

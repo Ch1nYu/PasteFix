@@ -92,4 +92,16 @@ public class NormalizerTests
     {
         Assert.Equal("", Normalizer.Normalize("```\n```"));
     }
+
+    [Theory]
+    [InlineData("$ npm install express")]
+    [InlineData("> pip install\nnpm install")]
+    [InlineData("```bash\ngit add . &&\ngit commit -m \"x\"\n```")]
+    [InlineData("# hello\nnpm install")]
+    [InlineData("$ echo a\n$ echo b")]
+    public void NormalizeIsIdempotent(string input)
+    {
+        string once = Normalizer.Normalize(input);
+        Assert.Equal(once, Normalizer.Normalize(once));
+    }
 }
