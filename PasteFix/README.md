@@ -9,7 +9,7 @@ and run a command immediately.
 
 ## Usage
 
-Run `dist\PasteFix.exe`. It sits in the system tray:
+Run `PasteFix\dist\PasteFix.exe`. It sits in the system tray:
 
 - **立即清洗** (*Clean now*) — cleans the current clipboard and shows a balloon tip.
 - **全自動監聽** (*Auto monitor*, default on) — watches the clipboard; whenever the
@@ -38,22 +38,22 @@ Plain text without command-shaped features is left untouched.
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```sh
-dotnet build PasteFix.slnx   # build
-dotnet test                   # run unit tests
+dotnet build PasteFix/dotnet/PasteFix.slnx      # build
+dotnet test PasteFix/dotnet/PasteFix.slnx       # run unit tests
 ```
 
 Ship as a self-contained single exe:
 
 ```sh
-dotnet publish dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 --self-contained true -o dist -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 --self-contained true -o dist -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
 ```
 
 ## Layout
 
-- `dotnet/src/PasteFix` — the WinForms tray app
+- `PasteFix/dotnet/src/PasteFix` — the WinForms tray app
   - `Normalizer.cs` — the cleaning core (pure, unit-tested)
   - `MessageWindow.cs` — hidden window for clipboard + hotkey messages
   - `Settings.cs` — persistent settings
-- `dotnet/tests/PasteFix.Tests` — xUnit tests
-- `examples` — paired input/expected samples used as test fixtures
-- `legacy` — the old Node.js CLI, kept for reference
+- `PasteFix/dotnet/tests/PasteFix.Tests` — xUnit tests
+- `PasteFix/examples` — paired input/expected samples used as test fixtures
+- `PasteFix/legacy` — the old Node.js CLI, kept for reference
