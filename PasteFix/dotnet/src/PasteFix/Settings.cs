@@ -22,6 +22,10 @@ public sealed class Settings
             {
                 return JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings();
             }
+
+            var defaults = new Settings();
+            defaults.Save();
+            return defaults;
         }
         catch
         {
