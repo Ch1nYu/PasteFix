@@ -73,17 +73,21 @@ public sealed class TrayApplication : ApplicationContext
 
     private static void SendPaste()
     {
-        const byte vkControl = 0x11;
-        const byte vkV = 0x56;
-        const uint keyUp = 0x0002;
-        keybd_event(vkControl, 0, 0, UIntPtr.Zero);
-        keybd_event(vkV, 0, 0, UIntPtr.Zero);
-        keybd_event(vkV, 0, keyUp, UIntPtr.Zero);
-        keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
+        IntPtr hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+        SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
     }
 
+    private const uint WM_PASTE = 0x0302;
+
     [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    private static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     private void ApplySettings()
     {
