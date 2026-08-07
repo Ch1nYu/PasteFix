@@ -36,10 +36,28 @@ public sealed class TrayApplication : ApplicationContext
         };
         _icon.DoubleClick += (_, _) => CleanClipboard();
 
-        _window.ClipboardChanged += () => CleanClipboard(showNotification: false);
+        _window.ClipboardChanged += OnClipboardChanged;
         _window.HotkeyPressed += () => CleanClipboard();
 
         ApplySettings();
+    }
+
+    private System.Windows.Forms.Timer? _clipDebounce;
+
+    private void OnClipboardChanged()
+    {
+        if (_clipDebounce == null)
+        {
+            _clipDebounce = new System.Windows.Forms.Timer { Interval = 300 };
+            _clipDebounce.Tick += (_, _) =>
+            {
+                _clipDebounce.Stop();
+                CleanClipboard(showNotification: false);
+            };
+        }
+
+        _clipDebounce.Stop();
+        _clipDebounce.Start();
     }
 
     private void ApplySettings()
@@ -110,6 +128,7 @@ public sealed class TrayApplication : ApplicationContext
     {
         _icon.Visible = false;
         _icon.Dispose();
+        _clipDebounce?.Dispose();
         _window.ReleaseHandle();
         base.ExitThreadCore();
     }
