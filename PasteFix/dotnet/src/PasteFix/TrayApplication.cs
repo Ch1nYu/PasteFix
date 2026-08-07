@@ -62,14 +62,35 @@ public sealed class TrayApplication : ApplicationContext
 
     private void OnHotkeyPressed()
     {
-        bool changed = CleanClipboard(showNotification: false);
+        Program.Log($"HotkeyPressed fired");
+        IntPtr fgBoundary = GetForegroundWindow();
+        Program.Log(
+            $"  foreground hwnd=0x{fgBoundary.ToInt64():X} class=[{GetClassName(fgBoundary)}] title=[{GetWindowTitle(fgBoundary)}]");
+        bool hasText = Clipboard.ContainsText();
+        Program.Log($"  clipboard hasText={hasText}");
+        bool changed = false;
+        if (hasText)
+        {
+            string raw = Clipboard.GetText();
+            Program.Log($"  clipboard text=[{Shorten(raw)}]");
+            changed = CleanClipboard(showNotification: false);
+            Program.Log($"  CleanClipboard changed={changed}");
+        }
+        else
+        {
+            Program.Log("  clipboard empty, skipping clean");
+        }
         SendPaste();
-        _icon.ShowBalloonTip(
-            1200,
-            "Pastefix",
-            changed ? "已清洗並貼上" : "內容已乾淨，已貼上",
-            ToolTipIcon.Info);
+        Program.Log("  WM_PASTE sent");
+        string message = !hasText ? "剪貼簿中沒有文字" : changed ? "已清洗並貼上" : "內容已乾淨，已貼上";
+        _icon.ShowBalloonTip(1200, "Pastefix", message, ToolTipIcon.Info);
     }
+
+    private static string Shorten(string s) => s.Length > 100 ? s.Substring(0, 100) + "…" : s;
+
+    private static string GetClassName(IntPtr hwnd) { try { var sb = new System.Text.StringBuilder(256); GetClassName(hwnd, sb, sb.Capacity); return sb.ToString(); } catch { return "?"; } }
+
+    private static string GetWindowTitle(IntPtr hwnd) { try { var sb = new System.Text.StringBuilder(256); GetWindowText(hwnd, sb, sb.Capacity); return sb.ToString(); } catch { return "?"; } }
 
     private static void SendPaste()
     {
@@ -88,6 +109,12 @@ public sealed class TrayApplication : ApplicationContext
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
     private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
     private void ApplySettings()
     {
