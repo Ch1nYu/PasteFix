@@ -65,27 +65,53 @@ public sealed class TrayApplication : ApplicationContext
 
     private void CleanClipboard(bool showNotification = true)
     {
+        Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
         {
+            Trace("  no text on clipboard");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿中沒有文字", ToolTipIcon.Info);
             return;
         }
 
         string text = Clipboard.GetText();
-        if (text == _lastWritten) return;
+        Trace($"  text=[{text}] lastWritten=[{_lastWritten}]");
+        if (text == _lastWritten)
+        {
+            Trace("  skip: text == lastWritten");
+            return;
+        }
 
         string cleaned = Normalizer.Normalize(text);
+        Trace($"  cleaned=[{cleaned}]");
         if (cleaned == text)
         {
+            Trace("  no change needed");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
             return;
         }
 
         _lastWritten = cleaned;
         Clipboard.SetText(cleaned);
+        Trace($"  wrote back lastWritten=[{cleaned}]");
 
         if (showNotification)
             _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);
+    }
+
+    private static void Trace(string message)
+    {
+        try
+        {
+            if (Environment.GetEnvironmentVariable("PASTEFIX_TRACE") == "1")
+            {
+                File.AppendAllText(
+                    Path.Combine(Path.GetTempPath(), "pastefix-trace.log"),
+                    $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+        }
     }
 
     protected override void ExitThreadCore()
