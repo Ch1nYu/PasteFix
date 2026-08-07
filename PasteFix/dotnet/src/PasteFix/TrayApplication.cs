@@ -99,7 +99,29 @@ public sealed class TrayApplication : ApplicationContext
         {
             return;
         }
-        SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
+        string className = GetClassName(hwnd);
+        Program.Log($"  SendPaste fg class=[{className}]");
+        if (className == "org.wezfurlong.wezterm")
+        {
+            // WezTerm 不收 WM_PASTE；用 WezTerm 自己的貼上鍵 Ctrl+Shift+V
+            const byte vkMenu = 0x12;
+            const byte vkControl = 0x11;
+            const byte vkShift = 0x10;
+            const byte vkV = 0x56;
+            const uint keyUp = 0x0002;
+            // 先釋放實體 Alt（RegisterHotKey 可能留下壓住狀態）
+            keybd_event(vkMenu, 0, keyUp, UIntPtr.Zero);
+            keybd_event(vkControl, 0, 0, UIntPtr.Zero);
+            keybd_event(vkShift, 0, 0, UIntPtr.Zero);
+            keybd_event(vkV, 0, 0, UIntPtr.Zero);
+            keybd_event(vkV, 0, keyUp, UIntPtr.Zero);
+            keybd_event(vkShift, 0, keyUp, UIntPtr.Zero);
+            keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
+        }
+        else
+        {
+            SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
+        }
     }
 
     private const uint WM_PASTE = 0x0302;
@@ -109,6 +131,9 @@ public sealed class TrayApplication : ApplicationContext
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
     private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
     private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
