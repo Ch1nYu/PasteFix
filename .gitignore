@@ -2,7 +2,7 @@ Thumbs.db
 .DS_Store
 
 # .NET
-dotnet/**/bin/
-dotnet/**/obj/
+PasteFix/dotnet/**/bin/
+PasteFix/dotnet/**/obj/
 *.user
-dist/
+PasteFix/dist/
