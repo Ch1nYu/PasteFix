@@ -1,0 +1,98 @@
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace PasteFix;
+
+public sealed class TrayApplication : ApplicationContext
+{
+    private readonly NotifyIcon _icon;
+    private readonly MessageWindow _window = new();
+    private readonly Settings _settings;
+    private readonly ToolStripMenuItem _autoMonitorItem;
+    private readonly ToolStripMenuItem _hotkeyItem;
+    private string? _lastWritten;
+
+    public TrayApplication()
+    {
+        _settings = Settings.Load();
+
+        _autoMonitorItem = new ToolStripMenuItem("全自動監聽", null, OnAutoMonitorToggle) { Checked = _settings.AutoMonitor };
+        _hotkeyItem = new ToolStripMenuItem("熱鍵 Alt+V", null, OnHotkeyToggle) { Checked = _settings.HotkeyEnabled };
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard()));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_autoMonitorItem);
+        menu.Items.Add(_hotkeyItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => Application.Exit()));
+
+        _icon = new NotifyIcon
+        {
+            Icon = SystemIcons.Application,
+            Text = "Pastefix — 清洗 AI 產生的終端指令",
+            ContextMenuStrip = menu,
+            Visible = true,
+        };
+        _icon.DoubleClick += (_, _) => CleanClipboard();
+
+        _window.ClipboardChanged += () => CleanClipboard(showNotification: false);
+        _window.HotkeyPressed += () => CleanClipboard();
+
+        ApplySettings();
+    }
+
+    private void ApplySettings()
+    {
+        _window.SetClipboardListening(_settings.AutoMonitor);
+        _window.SetHotkeyListening(_settings.HotkeyEnabled);
+    }
+
+    private void OnAutoMonitorToggle(object? sender, EventArgs e)
+    {
+        _settings.AutoMonitor = _autoMonitorItem.Checked;
+        _window.SetClipboardListening(_settings.AutoMonitor);
+        _settings.Save();
+    }
+
+    private void OnHotkeyToggle(object? sender, EventArgs e)
+    {
+        _settings.HotkeyEnabled = _hotkeyItem.Checked;
+        _window.SetHotkeyListening(_settings.HotkeyEnabled);
+        _settings.Save();
+    }
+
+    private void CleanClipboard(bool showNotification = true)
+    {
+        if (!Clipboard.ContainsText())
+        {
+            if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿中沒有文字", ToolTipIcon.Info);
+            return;
+        }
+
+        string text = Clipboard.GetText();
+        if (text == _lastWritten) return;
+
+        string cleaned = Normalizer.Normalize(text);
+        if (cleaned == text)
+        {
+            if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
+            return;
+        }
+
+        _lastWritten = cleaned;
+        Clipboard.SetText(cleaned);
+
+        if (showNotification)
+            _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);
+    }
+
+    protected override void ExitThreadCore()
+    {
+        _icon.Visible = false;
+        _icon.Dispose();
+        _window.ReleaseHandle();
+        base.ExitThreadCore();
+    }
+}
