@@ -1,39 +1,120 @@
-﻿using System;
+using System;
 using System.IO;
 
 namespace PasteFix.Tests;
 
+/// <summary>
+/// Normalizer does exactly two things: remove the indent common to every line
+/// (<see cref="Normalizer.Dedent"/>), and join continuation lines into single
+/// commands (<see cref="Normalizer.Normalize"/>, which also dedents).
+///
+/// Everything else the old implementation did — stripping prompts, deleting `#`
+/// comments, removing markdown fences, rewriting line endings — was removed on
+/// 2026-08-09. See PLAN-2026-08-09.md for why each rule was dropped.
+/// </summary>
 public class NormalizerTests
 {
     private static string Example(string name)
+        => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "examples", $"{name}.txt")).TrimEnd();
+
+    // ---------------------------------------------------------------- Dedent
+
+    [Fact]
+    public void DedentRemovesIndentCommonToEveryLine()
     {
-        string fileName = $"{name}.input.txt";
-        string path = Path.Combine(AppContext.BaseDirectory, "examples", fileName);
-        return File.ReadAllText(path).TrimEnd();
+        Assert.Equal("a\n    b\nc", Normalizer.Dedent("    a\n        b\n    c"));
     }
 
     [Fact]
-    public void RemovesMarkdownFenceAndIndent()
+    public void DedentKeepsRelativeIndentOfPythonCode()
     {
-        string input = Example("markdown-fence");
-        string expected = File.ReadAllText(
-            Path.Combine(AppContext.BaseDirectory, "examples", "markdown-fence.expected.txt"))
-            .TrimEnd();
-
-        Assert.Equal(expected, Normalizer.Normalize(input));
+        string input = "class A:\n    def f(self):\n        return 1";
+        Assert.Equal(input, Normalizer.Dedent(input));
     }
 
     [Fact]
-    public void RemovesDollarShellPrompt()
+    public void DedentKeepsYamlStructure()
     {
-        Assert.Equal("npm install express", Normalizer.Normalize("$ npm install express"));
+        string input = "services:\n  api:\n    build:\n      context: .";
+        Assert.Equal(input, Normalizer.Dedent(input));
     }
 
     [Fact]
-    public void RemovesAngleShellPrompt()
+    public void DedentDoesNothingWhenFirstLineHasNoIndent()
     {
-        Assert.Equal("npm install express", Normalizer.Normalize("> npm install express"));
+        // The common prefix is empty, so nothing is stripped.
+        string input = "a\n    b";
+        Assert.Equal(input, Normalizer.Dedent(input));
     }
+
+    [Fact]
+    public void DedentIgnoresBlankLinesWhenComputingCommonIndent()
+    {
+        Assert.Equal("a\n\nb", Normalizer.Dedent("    a\n\n    b"));
+    }
+
+    [Fact]
+    public void DedentTrimsBlankLinesAtBothEnds()
+    {
+        // A trailing newline makes a terminal execute the last line on paste.
+        Assert.Equal("git status", Normalizer.Dedent("\n\ngit status\n\n"));
+    }
+
+    [Fact]
+    public void DedentStripsCommonTabIndent()
+    {
+        Assert.Equal("a\n\tb", Normalizer.Dedent("\ta\n\t\tb"));
+    }
+
+    [Fact]
+    public void DedentStripsOnlyTheCommonPrefixOfMixedWhitespace()
+    {
+        // "\t " is common to both lines; the second line's extra space stays.
+        Assert.Equal("a\n b", Normalizer.Dedent("\t a\n\t  b"));
+    }
+
+    [Fact]
+    public void DedentDoesNotStripWhenWhitespaceKindsDiffer()
+    {
+        // Tab and space share no common prefix, so neither line is touched.
+        string input = "\ta\n b";
+        Assert.Equal(input, Normalizer.Dedent(input));
+    }
+
+    [Fact]
+    public void DedentDoesNotJoinContinuations()
+    {
+        // Merging is Normalize's job, not Dedent's — AutoMonitor must stay lossless.
+        Assert.Equal("npm install \\\n--save express", Normalizer.Dedent("npm install \\\n--save express"));
+    }
+
+    [Fact]
+    public void DedentReturnsEmptyForBlankInput()
+    {
+        Assert.Equal("", Normalizer.Dedent("   \n\n  "));
+    }
+
+    // ------------------------------------------------- line endings preserved
+
+    [Fact]
+    public void PreservesLfLineEndings()
+    {
+        Assert.Equal("a\nb", Normalizer.Dedent("  a\n  b"));
+    }
+
+    [Fact]
+    public void PreservesCrLfLineEndings()
+    {
+        Assert.Equal("a\r\nb", Normalizer.Dedent("  a\r\n  b"));
+    }
+
+    [Fact]
+    public void PreservesCrLfWhenMerging()
+    {
+        Assert.Equal("npm install --save", Normalizer.Normalize("npm install \\\r\n--save"));
+    }
+
+    // ------------------------------------------------------ continuation merge
 
     [Fact]
     public void JoinsBackslashContinuations()
@@ -44,183 +125,192 @@ public class NormalizerTests
     }
 
     [Fact]
-    public void KeepsMultiLinePromptsAsSeparateCommands()
+    public void JoinsBacktickContinuations()
     {
         Assert.Equal(
-            "echo a\r\necho b",
-            Normalizer.Normalize("$ echo a\n$ echo b"));
-    }
-
-    [Fact]
-    public void RemovesPowerShellPrompt()
-    {
-        Assert.Equal(
-            "npm install",
-            Normalizer.Normalize("PS C:\\Users\\me> npm install"));
-    }
-
-    [Fact]
-    public void RemovesCommentLinesInPromptContext()
-    {
-        // BUG-2: comment removal only in multiPrompt (command) context; prompts stripped too
-        Assert.Equal(
-            "npm install",
-            Normalizer.Normalize("$ # install dependencies\n$ npm install"));
-    }
-
-    [Fact]
-    public void KeepsCommentLinesInNonPromptContext()
-    {
-        Assert.Equal(
-            "# install dependencies\r\nnpm install",
-            Normalizer.Normalize("# install dependencies\nnpm install"));
+            "Get-ChildItem -Path . -Filter *.txt",
+            Normalizer.Normalize("Get-ChildItem `\n    -Path . `\n    -Filter *.txt"));
     }
 
     [Fact]
     public void JoinsDoubleAmpersandContinuations()
     {
+        Assert.Equal("git add . && git commit", Normalizer.Normalize("git add . &&\ngit commit"));
+    }
+
+    [Fact]
+    public void JoinsTrailingPipeContinuations()
+    {
+        // BUGREPORT: a blank line after `Get-Process |` produced EmptyPipeElement.
         Assert.Equal(
-            "git add . && git commit",
-            Normalizer.Normalize("git add . &&\ngit commit"));
+            "Get-Process | Select-Object -First 3",
+            Normalizer.Normalize("Get-Process |\n    Select-Object -First 3"));
     }
 
     [Fact]
-    public void HandlesCrLfInput()
+    public void SkipsBlankLinesWhileJoiningContinuations()
     {
-        // BUG-3: output is always CRLF for Windows clipboard compatibility
-        Assert.Equal("echo a\r\necho b", Normalizer.Normalize("$ echo a\r\n$ echo b"));
+        // BUGREPORT-2026-08-08: `Get-Process |` followed by a blank line gave
+        // "An empty pipe element is not allowed." A blank line after a
+        // continuation marker is never meaningful, so it is dropped.
+        Assert.Equal(
+            "Get-Process | Select-Object -First 3",
+            Normalizer.Normalize("Get-Process |\n\nSelect-Object -First 3"));
     }
 
     [Fact]
-    public void ConvertsLfInputToCrLfOutput()
+    public void KeepsBlankLinesThatAreNotInsideAContinuation()
     {
-        // BUG-3: web copies are LF; output must still be CRLF
-        Assert.Equal("echo a\r\necho b", Normalizer.Normalize("$ echo a\n$ echo b"));
+        string input = "echo one\n\necho two";
+        Assert.Equal(input, Normalizer.Normalize(input));
     }
 
     [Fact]
-    public void NormalizeLineEndingsConvertsLfToCrLf()
+    public void MergedContinuationDoesNotKeepLeadingIndent()
     {
-        Assert.Equal("a\r\nb\r\nc", Normalizer.NormalizeLineEndings("a\nb\nc"));
+        Assert.Equal(
+            "docker run -e FOO=bar image",
+            Normalizer.Normalize("docker run \\\n    -e FOO=bar \\\n    image"));
     }
 
     [Fact]
-    public void NormalizeLineEndingsKeepsExistingCrLf()
+    public void MergesFixtureExample()
     {
-        Assert.Equal("a\r\nb", Normalizer.NormalizeLineEndings("a\r\nb"));
+        Assert.Equal(
+            Example("shell-continuation.expected"),
+            Normalizer.Normalize(Example("shell-continuation.input")));
+    }
+
+    // ------------------------------------------------------------- merge guards
+
+    [Fact]
+    public void DoesNotMergeInsideUnclosedBracket()
+    {
+        // `if (a &&` is code, not a shell continuation: the && sits inside an open paren.
+        string input = "if (a &&\n    b) { doThing(); }";
+        Assert.Equal(input, Normalizer.Normalize(input));
     }
 
     [Fact]
-    public void ReturnsEmptyForEmptyInput()
+    public void DoesNotMergeCMacroBackslashInsideBraces()
     {
-        Assert.Equal("", Normalizer.Normalize("   \n\n  "));
+        string input = "#define FOO(x) do { \\\n    bar(x); \\\n} while (0)";
+        Assert.Equal(input, Normalizer.Normalize(input));
     }
 
     [Fact]
-    public void ReturnsEmptyForFenceOnlyInput()
+    public void DoesNotMergeWindowsPathEndingInBackslash()
     {
-        Assert.Equal("", Normalizer.Normalize("```\n```"));
+        // `C:\temp\` is a path, not a bash continuation. A real continuation
+        // always has whitespace in front of the marker.
+        string input = "cd C:\\temp\\\ndir";
+        Assert.Equal(input, Normalizer.Normalize(input));
     }
 
-    // BUG-1 / BUG-3 / BUG-4 coverage gaps
+    [Fact]
+    public void DoesNotMergeBackslashAttachedToAToken()
+    {
+        string input = "echo a\\\nb";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void DoesNotMergeTrailingBackslashInsideSingleQuotedString()
+    {
+        // Merging would silently change the string's contents.
+        string input = "$s = 'a \\\nb'";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void DoesNotMergeInsidePowerShellHereString()
+    {
+        string input = "$t = @\"\nline one \\\nline two\n\"@";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void DoesNotMergeInsideBashHeredoc()
+    {
+        string input = "cat <<EOF\nline one \\\nline two\nEOF";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void ResumesMergingAfterHereStringCloses()
+    {
+        Assert.Equal(
+            "$t = @\"\nbody\n\"@\necho a && echo b",
+            Normalizer.Normalize("$t = @\"\nbody\n\"@\necho a &&\necho b"));
+    }
+
+    // ------------------------------------------------------ no removed behaviour
+
+    [Fact]
+    public void KeepsShellPrompts()
+    {
+        // Prompt stripping was removed: the user avoids copying prompts in the
+        // first place, so the rule had no real scenario backing it.
+        Assert.Equal("$ npm install", Normalizer.Normalize("$ npm install"));
+    }
+
+    [Fact]
+    public void KeepsMarkdownBlockquote()
+    {
+        Assert.Equal("> quoted line", Normalizer.Normalize("> quoted line"));
+    }
+
+    [Fact]
+    public void KeepsMarkdownFence()
+    {
+        string input = "```bash\ngit status\n```";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void KeepsCommentLines()
+    {
+        string input = "# install deps\nnpm install";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void KeepsCommentInsideCode()
+    {
+        string input = "if (true) {\n    # a comment\n    Write-Host 'hi'\n}";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void KeepsTrailingWhitespaceOnlyWhereItMatters()
+    {
+        // Markdown hard line breaks are two trailing spaces; nothing trims them now.
+        Assert.Equal("line one  \nline two", Normalizer.Normalize("line one  \nline two"));
+    }
+
+    // ------------------------------------------------------------- idempotency
+
     [Theory]
-    [InlineData("$ npm install express")]
-    [InlineData("> pip install\nnpm install")]
-    [InlineData("```bash\ngit add . &&\ngit commit -m \"x\"\n```")]
-    [InlineData("# hello\nnpm install")]
-    [InlineData("$ echo a\n$ echo b")]
+    [InlineData("npm install \\\n--save express")]
+    [InlineData("git add . &&\ngit commit")]
+    [InlineData("Get-Process |\n    Select-Object -First 3")]
+    [InlineData("class A:\n    def f(self):\n        return 1")]
+    [InlineData("if (a &&\n    b) { doThing(); }")]
+    [InlineData("$t = @\"\nline one \\\nline two\n\"@")]
+    [InlineData("    indented\n        deeper")]
     public void NormalizeIsIdempotent(string input)
     {
         string once = Normalizer.Normalize(input);
         Assert.Equal(once, Normalizer.Normalize(once));
     }
 
-    [Fact]
-    public void KeepsIndentForCodeWithoutPrompt()
+    [Theory]
+    [InlineData("    a\n        b")]
+    [InlineData("class A:\n    def f(self):\n        return 1")]
+    [InlineData("\ta\n\t\tb")]
+    public void DedentIsIdempotent(string input)
     {
-        // BUG-1: indentation must be preserved for non-prompt multi-line code
-        string input = "if (x) {\n    y\n}";
-        Assert.Equal("if (x) {\r\n    y\r\n}", Normalizer.Normalize(input));
-    }
-
-    [Fact]
-    public void KeepsIndentForPythonCode()
-    {
-        string input = "class A:\n    def f(self):\n        return 1";
-        string result = Normalizer.Normalize(input);
-        Assert.Contains("def f(self):", result);
-        Assert.Contains("        return 1", result);
-    }
-
-    [Fact]
-    public void KeepsCommentInsideCodeWithoutPrompt()
-    {
-        // BUG-2: comments inside code should not be deleted when no prompt
-        string input = "if (true) {\n    # this is a comment\n    Write-Host 'hi'\n}";
-        string result = Normalizer.Normalize(input);
-        Assert.Contains("# this is a comment", result);
-    }
-
-    [Fact]
-    public void KeepsMarkdownBlockquoteInSingleLineNonPrompt()
-    {
-        // When input isn't prompt-shaped (no $/>/PS prompts), > is preserved
-        // However multiPrompt activates for single > line due to design.
-        // This tests that pure non-prompt multi-line passes through.
-        string input = "hello\nworld";
-        Assert.Equal("hello\r\nworld", Normalizer.Normalize(input));
-    }
-
-    [Fact]
-    public void KeepsNonCommandMultiLineIntact()
-    {
-        // BUG-0 / design: non-command multi-line should pass through AutoMonitor gate untouched
-        string input = "services:\n  api:\n    build:\n      context: .";
-        Assert.Equal(
-            "services:\r\n  api:\r\n    build:\r\n      context: .",
-            Normalizer.Normalize(input));
-    }
-
-    // BUG-5: continuation merge is a shell-command transform. It must not fire on
-    // code, where a trailing && / \ sits inside an unclosed bracket.
-    [Fact]
-    public void KeepsCodeWithTrailingAndAndUnmerged()
-    {
-        string input = "if (a &&\n    b) { doThing(); }";
-        Assert.Equal("if (a &&\r\n    b) { doThing(); }", Normalizer.Normalize(input));
-    }
-
-    [Fact]
-    public void KeepsCMacroBackslashInsideBracesUnmerged()
-    {
-        string input = "#define FOO(x) do { \\\n    bar(x); \\\n} while (0)";
-        Assert.Equal(
-            "#define FOO(x) do { \\\r\n    bar(x); \\\r\n} while (0)",
-            Normalizer.Normalize(input));
-    }
-
-    // BUG-2 residual: AnyPrompt used a zero-width `\s*`, so PowerShell variables
-    // ($a, $b) counted as prompts, flipped multiPrompt on, and the comment filter
-    // deleted real code comments.
-    [Fact]
-    public void PowerShellVariablesAreNotPrompts()
-    {
-        string input = "$a = 1\n# a comment\n$b = 2";
-        Assert.Equal("$a = 1\r\n# a comment\r\n$b = 2", Normalizer.Normalize(input));
-    }
-
-    [Fact]
-    public void StillDetectsRealDollarPrompts()
-    {
-        Assert.Equal("echo a\r\necho b", Normalizer.Normalize("$ echo a\n$ echo b"));
-    }
-
-    [Fact]
-    public void MergedContinuationDoesNotKeepLeadingIndent()
-    {
-        // Indented shell continuations must collapse to single spaces, not indent + space.
-        Assert.Equal(
-            "docker run -e FOO=bar image",
-            Normalizer.Normalize("docker run \\\n    -e FOO=bar \\\n    image"));
+        string once = Normalizer.Dedent(input);
+        Assert.Equal(once, Normalizer.Dedent(once));
     }
 }

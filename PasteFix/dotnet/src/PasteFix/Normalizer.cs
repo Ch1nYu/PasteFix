@@ -2,135 +2,232 @@ using System.Text.RegularExpressions;
 
 namespace PasteFix;
 
+/// <summary>
+/// Turns a multi-line command copied from a chat window into something that can
+/// be pasted into a terminal in one go. It does exactly two things:
+///
+///   <see cref="Dedent"/>   — remove the indent common to every line.
+///   <see cref="Normalize"/> — dedent, then join continuation lines.
+///
+/// Nothing else. It does not strip prompts, delete comments, remove markdown
+/// fences, or rewrite line endings; those rules were removed on 2026-08-09
+/// because none of them had a real scenario behind it (PLAN-2026-08-09.md).
+///
+/// Dedent is structure-preserving, so AutoMonitor may run it on any clipboard
+/// content. Joining continuations changes the text, so it only runs when the
+/// user explicitly asks for it (Alt+V / the tray menu).
+/// </summary>
 public static partial class Normalizer
 {
-    [GeneratedRegex(@"^```[a-zA-Z0-9_-]*\s*$")]
-    private static partial Regex FenceLine();
+    // A trailing `\` (bash) or backtick (PowerShell) is a continuation marker and
+    // is consumed when joining. `&&` and a trailing pipe also continue, but stay.
+    //
+    // The marker must have whitespace in front of it. Without that guard a
+    // Windows path (`cd C:\temp\`) or a ``` fence looks exactly like one, and
+    // merging would silently corrupt the command. A real continuation is always
+    // written `command \` / `command ` + backtick.
+    [GeneratedRegex(@"(?:(?<=[ \t])[\\`]|&&|\|\|?)[ \t]*$")]
+    private static partial Regex ContinuationMarker();
 
-    [GeneratedRegex(@"^[>$]\s+")]
-    private static partial Regex ShellPrompt();
+    [GeneratedRegex(@"(?<=[ \t])[\\`][ \t]*$")]
+    private static partial Regex ConsumedMarker();
 
-    [GeneratedRegex(@"^PS[^\n]*>\s*")]
-    private static partial Regex PowerShellPrompt();
+    // bash heredoc: <<EOF / <<-EOF / <<'EOF' / <<"EOF"
+    [GeneratedRegex(@"<<-?\s*(?<q>['""]?)(?<tag>[A-Za-z_][A-Za-z0-9_]*)\k<q>")]
+    private static partial Regex Heredoc();
 
-    // Must stay in sync with ShellPrompt/PowerShellPrompt: a `>`/`$` is only a prompt
-    // when followed by whitespace. A zero-width `\s*` here made PowerShell variables
-    // ($a, $b) count as prompts, wrongly flipping multiPrompt on.
-    [GeneratedRegex(@"^(?:[>$]\s+|PS[^\n]*>\s*)")]
-    private static partial Regex AnyPrompt();
-
-    [GeneratedRegex(@"\\\s*$")]
-    private static partial Regex BackslashContinuation();
-
-    [GeneratedRegex(@"&&\s*$")]
-    private static partial Regex AndAndContinuation();
-
-    // BUG-3: web copies are often LF-only; Windows terminal paste needs CRLF.
-    // This is safe for ANY content (no semantic change), so it runs even when
-    // the input is not command-shaped.
-    public static string NormalizeLineEndings(string text)
+    /// <summary>
+    /// Removes the whitespace prefix shared by every non-blank line, and drops
+    /// blank lines at both ends. Relative indentation is untouched, so Python,
+    /// YAML and here-strings survive. A trailing newline is dropped too — it
+    /// would otherwise make a terminal run the last line the moment you paste.
+    /// </summary>
+    public static string Dedent(string input)
     {
-        return text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+        (List<string> lines, string eol) = SplitLines(input);
+        if (lines.Count == 0) return "";
+
+        StripCommonIndent(lines);
+        return string.Join(eol, lines);
     }
 
+    /// <summary>
+    /// <see cref="Dedent"/>, then join continuation lines into single commands.
+    /// A trailing `\`, backtick, `&amp;&amp;` or `|` only counts as a continuation
+    /// when it sits at bracket depth zero, outside any quoted string, and outside
+    /// a here-string — in code such a marker is nearly always something else
+    /// (<c>if (a &amp;&amp;</c>, <c>do { \</c>).
+    /// </summary>
     public static string Normalize(string input)
     {
-        // BUG-3: input may be LF (web copy) or CRLF. Output is always CRLF for
-        // Windows clipboard / terminal paste compatibility.
-        const string EOL = "\r\n";
-        string[] lines = input.Replace("\r\n", "\n").Split('\n');
+        (List<string> lines, string eol) = SplitLines(input);
+        if (lines.Count == 0) return "";
 
-        int first = 0, last = lines.Length - 1;
-        while (first < lines.Length && string.IsNullOrWhiteSpace(lines[first])) first++;
-        while (last > first && string.IsNullOrWhiteSpace(lines[last])) last--;
-        if (first >= lines.Length || first > last) return "";
+        StripCommonIndent(lines);
+        return string.Join(eol, JoinContinuations(lines));
+    }
 
-        List<string> list = lines[first..(last + 1)].ToList();
+    // ------------------------------------------------------------------ splitting
 
-        if (FenceLine().IsMatch(list[0]))
+    /// Splits on any line ending, remembers which one the input used, and trims
+    /// blank lines from both ends.
+    private static (List<string> Lines, string Eol) SplitLines(string input)
+    {
+        string eol = "\n";
+        int lf = input.IndexOf('\n');
+        int cr = input.IndexOf('\r');
+        if (cr >= 0 && (lf < 0 || cr < lf))
+            eol = cr + 1 < input.Length && input[cr + 1] == '\n' ? "\r\n" : "\r";
+
+        string[] raw = input.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+
+        int first = 0, last = raw.Length - 1;
+        while (first <= last && string.IsNullOrWhiteSpace(raw[first])) first++;
+        while (last >= first && string.IsNullOrWhiteSpace(raw[last])) last--;
+
+        return first > last
+            ? ([], eol)
+            : (raw[first..(last + 1)].ToList(), eol);
+    }
+
+    // -------------------------------------------------------------------- dedent
+
+    private static void StripCommonIndent(List<string> lines)
+    {
+        string? common = null;
+        foreach (string line in lines)
         {
-            list.RemoveAt(0);
-            if (list.Count > 0 && list[^1].Trim() == "```") list.RemoveAt(list.Count - 1);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            string indent = line[..IndentLength(line)];
+            common = common is null ? indent : CommonPrefix(common, indent);
+            if (common.Length == 0) return;
         }
+        if (string.IsNullOrEmpty(common)) return;
 
-        string[] nonEmpty = list.Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-        if (nonEmpty.Length == 0) return "";
-
-        int commonIndent = nonEmpty.Min(l => l.TakeWhile(char.IsWhiteSpace).Count());
-        list = list.Select(l => l.Length >= commonIndent ? l[commonIndent..] : l).ToList();
-
-        int promptCount = nonEmpty.Count(l => AnyPrompt().IsMatch(l.TrimStart()));
-        bool multiPrompt = promptCount * 2 >= nonEmpty.Length;
-
-        list = list
-            .Select(l =>
-            {
-                string t = l.TrimStart();
-                Match ps = PowerShellPrompt().Match(t);
-                if (ps.Success)
-                    return t[ps.Length..];
-
-                // BUG-1 & BUG-4: only strip shell prompt when multiPrompt protects it
-                if (multiPrompt && ShellPrompt().IsMatch(t))
-                    return ShellPrompt().Replace(t, "");
-
-                return l; // preserve original indent / content
-            })
-            .Select(l => l.TrimEnd())
-            // BUG-2: only remove # lines in multiPrompt command context
-            .Where(l => !(multiPrompt && l.TrimStart().StartsWith('#')))
-            .ToList();
-
-        if (multiPrompt)
+        for (int i = 0; i < lines.Count; i++)
         {
-            return string.Join(EOL, list.Where(l => l.Length > 0));
+            lines[i] = lines[i].StartsWith(common, StringComparison.Ordinal)
+                ? lines[i][common.Length..]
+                : lines[i].TrimStart();
         }
+    }
 
-        // BUG-5: continuation merge is a shell transform. Since BUG-1/BUG-4 made the
-        // non-multiPrompt branch the default path for arbitrary code, a trailing
-        // `&&` / `\` no longer implies a shell continuation — in code it usually sits
-        // inside an unclosed bracket (`if (a &&`, `do { \`). Only merge while bracket
-        // depth is zero; otherwise emit the line verbatim.
-        var joined = new List<string>();
+    private static int IndentLength(string line)
+    {
+        int i = 0;
+        while (i < line.Length && (line[i] == ' ' || line[i] == '\t')) i++;
+        return i;
+    }
+
+    private static string CommonPrefix(string a, string b)
+    {
+        int i = 0;
+        while (i < a.Length && i < b.Length && a[i] == b[i]) i++;
+        return a[..i];
+    }
+
+    // --------------------------------------------------------------------- merge
+
+    private static List<string> JoinContinuations(List<string> lines)
+    {
+        var result = new List<string>();
+        var scan = new ScanState();
         string current = "";
-        int depth = 0;
-        foreach (string line in list)
+
+        foreach (string line in lines)
         {
-            bool insideBrackets = depth != 0;
-            depth += BracketDelta(line);
+            // A blank line between a continuation marker and the rest of the
+            // command is meaningless — and it is exactly what turned
+            // `Get-Process |` into "An empty pipe element is not allowed."
+            if (current.Length > 0 && string.IsNullOrWhiteSpace(line)) continue;
 
-            bool continues = BackslashContinuation().IsMatch(line) || AndAndContinuation().IsMatch(line);
-            string segment = BackslashContinuation().Replace(line, "").TrimEnd();
-            bool mergeable = !insideBrackets && depth == 0;
+            bool continues = ScanLine(line, scan);
 
-            if (current.Length == 0 && !mergeable)
+            // Nothing accumulated and nothing to accumulate: pass the line through
+            // untouched, so trailing whitespace and blank lines survive.
+            if (current.Length == 0 && !continues)
             {
-                joined.Add(line);
+                result.Add(line);
                 continue;
             }
 
-            // Continuation lines keep their own indentation in the source; collapse it
-            // so the merged command has single spaces between arguments.
+            string segment = ConsumedMarker().Replace(line, "").TrimEnd();
             current = current.Length == 0 ? segment : $"{current} {segment.TrimStart()}";
-            if (!continues || !mergeable)
+
+            if (!continues)
             {
-                joined.Add(current);
+                result.Add(current);
                 current = "";
             }
         }
-        if (current.Length > 0) joined.Add(current);
+        if (current.Length > 0) result.Add(current);
 
-        return string.Join(EOL, joined);
+        return result;
     }
 
-    private static int BracketDelta(string line)
+    /// Carried from line to line: an unbalanced bracket, an unterminated quote or
+    /// an open here-string all mean "we are inside something, do not join".
+    private sealed class ScanState
     {
-        int delta = 0;
+        public int Depth;
+        public char Quote;        // '\0', '\'' or '"'
+        public string? HereEnd;   // terminator while inside a here-string / heredoc
+    }
+
+    /// Updates <paramref name="s"/> for this line and reports whether the line
+    /// ends with a continuation marker that is actually acting as one.
+    private static bool ScanLine(string line, ScanState s)
+    {
+        if (s.HereEnd is not null)
+        {
+            if (line.Trim() == s.HereEnd) s.HereEnd = null;
+            return false;
+        }
+
+        bool escaped = false;
         foreach (char c in line)
         {
-            if (c is '(' or '[' or '{') delta++;
-            else if (c is ')' or ']' or '}') delta--;
+            if (escaped) { escaped = false; continue; }
+
+            if (s.Quote == '\'')
+            {
+                if (c == '\'') s.Quote = '\0';
+                continue;
+            }
+            if (s.Quote == '"')
+            {
+                if (c is '`' or '\\') { escaped = true; continue; }
+                if (c == '"') s.Quote = '\0';
+                continue;
+            }
+
+            switch (c)
+            {
+                case '\'': case '"': s.Quote = c; break;
+                case '(': case '[': case '{': s.Depth++; break;
+                case ')': case ']': case '}': s.Depth--; break;
+            }
         }
-        return delta;
+
+        if (s.Quote != '\0')
+        {
+            // An unterminated quote at end of line is either a PowerShell
+            // here-string opener or a string that genuinely spans lines. Either
+            // way there is nothing to join here.
+            string trimmed = line.TrimEnd();
+            if (trimmed.EndsWith("@\"", StringComparison.Ordinal)) { s.HereEnd = "\"@"; s.Quote = '\0'; }
+            else if (trimmed.EndsWith("@'", StringComparison.Ordinal)) { s.HereEnd = "'@"; s.Quote = '\0'; }
+            return false;
+        }
+
+        Match heredoc = Heredoc().Match(line);
+        if (heredoc.Success)
+        {
+            s.HereEnd = heredoc.Groups["tag"].Value;
+            return false;
+        }
+
+        return s.Depth == 0 && ContinuationMarker().IsMatch(line);
     }
 }
