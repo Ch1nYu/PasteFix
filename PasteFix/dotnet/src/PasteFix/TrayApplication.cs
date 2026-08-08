@@ -20,7 +20,7 @@ public sealed class TrayApplication : ApplicationContext
         _hotkeyItem = new ToolStripMenuItem("熱鍵 Alt+V", null, OnHotkeyToggle) { Checked = _settings.HotkeyEnabled };
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard()));
+        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard(force: true)));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
         menu.Items.Add(_hotkeyItem);
@@ -34,7 +34,7 @@ public sealed class TrayApplication : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
-        _icon.DoubleClick += (_, _) => CleanClipboard();
+        _icon.DoubleClick += (_, _) => CleanClipboard(force: true);
 
         _window.ClipboardChanged += OnClipboardChanged;
         _window.HotkeyPressed += OnHotkeyPressed;
@@ -73,7 +73,7 @@ public sealed class TrayApplication : ApplicationContext
         {
             string raw = Clipboard.GetText();
             Program.Log($"  clipboard text=[{Shorten(raw)}]");
-            changed = CleanClipboard(showNotification: false);
+            changed = CleanClipboard(showNotification: false, force: true);
             Program.Log($"  CleanClipboard changed={changed}");
         }
         else
@@ -161,7 +161,50 @@ public sealed class TrayApplication : ApplicationContext
         _settings.Save();
     }
 
-    private bool CleanClipboard(bool showNotification = true)
+    // BUG-0 gate: only treat clipboard content as command-shaped under conservative rules.
+    // AutoMonitor uses this; hotkey/menu bypass it (force).
+    private static bool IsCommandShaped(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        // Fence-wrapped input is always treated as command/code block
+        string trimmed = text.Trim();
+        if (trimmed.StartsWith("```") || trimmed.Contains("\n```")) return true;
+
+        string[] lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var nonEmpty = lines.Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+        if (nonEmpty.Count == 0) return false;
+
+        // Multi-line with mostly prompts => command block
+        int promptCount = nonEmpty.Count(l =>
+        {
+            string s = l.TrimStart();
+            // prompt requires a space after $ or >, or a PS...> prefix
+            return s.StartsWith("$ ") || s.StartsWith("> ") || System.Text.RegularExpressions.Regex.IsMatch(s, @"^PS[^\n]*>");
+        });
+        if (promptCount * 2 >= nonEmpty.Count) return true;
+
+        // Single line: treat as command unless it contains obvious code structure markers
+        if (nonEmpty.Count == 1)
+        {
+            string single = nonEmpty[0];
+            // If it starts with a prompt, treat as command
+            if (single.TrimStart().StartsWith("$ ") || single.TrimStart().StartsWith("> ") || System.Text.RegularExpressions.Regex.IsMatch(single.TrimStart(), @"^PS[^\n]*>"))
+                return true;
+
+            // Code markers that suggest non-command input (conservative exclusion)
+            string lower = single.ToLower();
+            bool hasCodeMarker = lower.Contains("class ") || lower.Contains("def ") || lower.Contains("function ") ||
+                lower.Contains("if (") || lower.Contains("for (") || lower.Contains("while (") ||
+                lower.Contains("#include") || lower.Contains("#!/usr") || lower.Contains("yaml") ||
+                lower.Contains("services:") || lower.Contains("api:");
+            return !hasCodeMarker;
+        }
+
+        return false; // multi-line non-prompt = not command-shaped for AutoMonitor
+    }
+
+    private bool CleanClipboard(bool showNotification = true, bool force = false)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
@@ -172,8 +215,20 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        Trace($"  text=[{text}]");
-        string cleaned = Normalizer.Normalize(text);
+
+        // BUG-0: command-shape cleaning is gated for AutoMonitor.
+        // BUG-3: line-ending fix (LF -> CRLF) is safe for ANY content, so the
+        // non-command path still applies it — web copies are LF and break paste.
+        string cleaned;
+        if (!force && !IsCommandShaped(text))
+        {
+            Trace("  not command-shaped (AutoMonitor gate); only fixing line endings");
+            cleaned = Normalizer.NormalizeLineEndings(text);
+        }
+        else
+        {
+            cleaned = Normalizer.Normalize(text);
+        }
         Trace($"  cleaned=[{cleaned}]");
         if (cleaned == text)
         {

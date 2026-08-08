@@ -28,10 +28,24 @@ Settings are saved to `%APPDATA%\PasteFix\settings.json` and take effect immedia
 | PowerShell prompt | `PS C:\Users\me> npm install` | `npm install` |
 | Backslash continuation | `npm install \`<br>`` `--save express` `` | `npm install --save express` |
 | `&&` continuation | `git add . &&`<br>`git commit` | `git add . && git commit` |
-| Comment lines | `# install deps`<br>`npm install` | `npm install` |
+| Comment lines (prompted blocks only) | `$ # install deps`<br>`$ npm install` | `npm install` |
 | Multiple prompted commands | `$ echo a`<br>`$ echo b` | `echo a`<br>`echo b` (kept separate) |
 
-Plain text without command-shaped features is left untouched.
+Output always uses CRLF, so a Windows terminal paste does not produce an extra
+blank continuation line per source line.
+
+### What is left untouched
+
+Cleaning is deliberately conservative, because the clipboard also carries code.
+Indentation, in-code `#` comments, and line structure are preserved for anything
+that is not a prompted command block — Python, YAML, here-strings, and code where
+a trailing `&&` / `\` sits inside an unclosed bracket (`if (a &&`, `do { \`) all
+round-trip unchanged.
+
+**全自動監聽** goes further and only cleans clipboard text that is command-shaped
+(fenced, mostly prompt-prefixed, or a single line). Everything else gets its line
+endings normalised and nothing more. **立即清洗** and **Alt+V** bypass that gate
+and always clean.
 
 ## Build from source
 

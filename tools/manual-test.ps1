@@ -1,13 +1,7 @@
-# Pastefix 手動冒煙測試
-#
-# 前置：
-#   1. 先啟動 tray：PasteFix\dist\PasteFix.exe
-#   2. 確認 tray 選單「全自動監聽」與「熱鍵 Alt+V」都是開啟狀態
-#
-# 執行：
-#   pwsh -File tools\manual-test.ps1
-#
-# 注意：腳本會改動剪貼簿，結束前會自動還原。
+# Pastefix 手動冒煙測試（修正後版本，對應 BUG-1~0 修復）
+# 前置：啟動 tray（PasteFix\dist\PasteFix.exe），確認「全自動監聽」與「熱鍵 Alt+V」開啟
+# 執行：pwsh -File tools\manual-test.ps1
+# 注意：腳本會改動剪貼簿，結束前自動還原。
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -32,20 +26,25 @@ function Test-Case([string]$name, [string]$text, [string]$expected) {
 $NL = "`r`n"
 $original = Get-Clipboard -Raw -ErrorAction SilentlyContinue
 
-Write-Host "== 自動監聽測試（需 tray 啟用「全自動監聽」） ==" -ForegroundColor Cyan
-Test-Case 'dollor shell prompt'  '$ npm install express'                          'npm install express'
-Test-Case 'angle shell prompt'   '> npm install'                                  'npm install'
-Test-Case 'PowerShell prompt'    'PS C:\Users\me> npm install'                    'npm install'
-Test-Case 'fence + slash join'   ('```' + 'bash' + $NL + '    npm install \' + $NL + '    --save express' + $NL + '```') 'npm install --save express'
-Test-Case '&& continuation'      ('git add . &&' + $NL + 'git commit -m "init"')  'git add . && git commit -m "init"'
-Test-Case 'comment lines'        ('# install deps' + $NL + 'npm install')         'npm install'
-Test-Case 'multi prompted lines' ('$ echo a' + $NL + '$ echo b')                  ('echo a' + "`n" + 'echo b')
+Write-Host "== 自動監聽測試（需 tray 啟用「全自動監聽」）==" -ForegroundColor Cyan
+# BUG-1: 縮排保留（非 prompt 多行不被砍）
+Test-Case 'indent preserved (code)'  "if (x) {`n    y`n}"  "if (x) {`r`n    y`r`n}"
+# BUG-3: CRLF 保留
+Test-Case 'CRLF preserved'  "$ echo a`r`n$ echo b"  "echo a`r`necho b"
+# BUG-0: AutoMonitor gate 對非命令文字放行（不改寫）
+Test-Case 'non-command pass-through'  "services:`n  api:`n    build: ."  "services:`r`n  api:`r`n    build: ."
+# BUG-4: > prompt 僅在 multiPrompt 才剝除
+Test-Case 'angle prompt stripped (multiPrompt)'  "> npm install"  "npm install"
+# BUG-2: 註解僅在 multiPrompt 刪除
+Test-Case 'comment removed (multiPrompt)'  "$ # hello`r`n$ npm install"  "npm install"
+# BUG-5: 單行續行合併維持（非 multiPrompt 仍合併）
+Test-Case 'backslash continuation'  "npm install \`n--save express"  "npm install --save express"
 
-Write-Host "== 熱鍵 Alt+V（需 tray 啟用「熱鍵 Alt+V」） ==" -ForegroundColor Cyan
+Write-Host "== 熱鍵 Alt+V（需 tray 啟用「熱鍵 Alt+V」）==" -ForegroundColor Cyan
 Set-Clipboard -Value '$ echo hotkey'
 [System.Windows.Forms.SendKeys]::SendWait('%v')
 Start-Sleep -Milliseconds 1500
-Write-Host ("  output     : {0}" -f ((Get-Clipboard -Raw) -replace "`r?`n", ' / '))
+Write-Host ("  hotkey output: {0}" -f ((Get-Clipboard -Raw) -replace "`r?`n", ' / '))
 
 Set-Clipboard -Value $original
 Write-Host "== 收尾：剪貼簿已還原 ==" -ForegroundColor Green
