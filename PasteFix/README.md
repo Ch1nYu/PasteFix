@@ -144,7 +144,7 @@ dotnet test PasteFix/dotnet/PasteFix.slnx       # run unit tests
 Ship as a self-contained single exe:
 
 ```sh
-dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 --self-contained true -o dist -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 --self-contained true -o PasteFix/dist -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
 ```
 
 Note that `PasteFix/dist/PasteFix.exe` is a *publish* artifact — `dotnet build`
