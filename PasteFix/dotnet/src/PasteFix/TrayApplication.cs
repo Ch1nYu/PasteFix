@@ -81,7 +81,6 @@ public sealed class TrayApplication : ApplicationContext
             Program.Log("  clipboard empty, skipping clean");
         }
         SendPaste();
-        Program.Log("  WM_PASTE sent");
         string message = !hasText ? "剪貼簿中沒有文字" : changed ? "已清洗並貼上" : "內容已乾淨，已貼上";
         _icon.ShowBalloonTip(1200, "Pastefix", message, ToolTipIcon.Info);
     }
@@ -101,27 +100,49 @@ public sealed class TrayApplication : ApplicationContext
         }
         string className = GetClassName(hwnd);
         Program.Log($"  SendPaste fg class=[{className}]");
-        if (className == "org.wezfurlong.wezterm")
+
+        // 現代終端機把輸入放在子表面（WezTerm 的 GL 視窗、Windows Terminal 的 XAML
+        // island），送到頂層 HWND 的 WM_PASTE 會被靜默丟掉——2026-08-09 實測：剪貼簿
+        // 清洗成功、貼上沒發生。這類視窗只能用它自己的貼上鍵驅動。
+        switch (className)
         {
-            // WezTerm 不收 WM_PASTE；用 WezTerm 自己的貼上鍵 Ctrl+Shift+V
-            const byte vkMenu = 0x12;
-            const byte vkControl = 0x11;
-            const byte vkShift = 0x10;
-            const byte vkV = 0x56;
-            const uint keyUp = 0x0002;
-            // 先釋放實體 Alt（RegisterHotKey 可能留下壓住狀態）
-            keybd_event(vkMenu, 0, keyUp, UIntPtr.Zero);
-            keybd_event(vkControl, 0, 0, UIntPtr.Zero);
-            keybd_event(vkShift, 0, 0, UIntPtr.Zero);
-            keybd_event(vkV, 0, 0, UIntPtr.Zero);
-            keybd_event(vkV, 0, keyUp, UIntPtr.Zero);
-            keybd_event(vkShift, 0, keyUp, UIntPtr.Zero);
-            keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
+            case "org.wezfurlong.wezterm":
+                SendPasteKeys(shift: true);     // WezTerm 的貼上是 Ctrl+Shift+V
+                Program.Log("  paste via Ctrl+Shift+V (WezTerm)");
+                break;
+
+            case "CASCADIA_HOSTING_WINDOW_CLASS":
+                SendPasteKeys(shift: false);    // Windows Terminal 的預設貼上是 Ctrl+V
+                Program.Log("  paste via Ctrl+V (Windows Terminal)");
+                break;
+
+            default:
+                // 一般的 Edit 控制項（記事本那類）收 WM_PASTE，而且比送鍵可靠：
+                // 不受焦點、修飾鍵狀態與按鍵綁定影響。
+                SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
+                Program.Log("  paste via WM_PASTE");
+                break;
         }
-        else
-        {
-            SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
-        }
+    }
+
+    private static void SendPasteKeys(bool shift)
+    {
+        const byte vkMenu = 0x12;
+        const byte vkControl = 0x11;
+        const byte vkShift = 0x10;
+        const byte vkV = 0x56;
+        const uint keyUp = 0x0002;
+
+        // 先釋放實體 Alt：熱鍵是 Alt+V，RegisterHotKey 不會幫忙放開，
+        // 而卡住的 Alt 會把接下來的 Ctrl+V 變成選單快捷鍵。
+        keybd_event(vkMenu, 0, keyUp, UIntPtr.Zero);
+
+        keybd_event(vkControl, 0, 0, UIntPtr.Zero);
+        if (shift) keybd_event(vkShift, 0, 0, UIntPtr.Zero);
+        keybd_event(vkV, 0, 0, UIntPtr.Zero);
+        keybd_event(vkV, 0, keyUp, UIntPtr.Zero);
+        if (shift) keybd_event(vkShift, 0, keyUp, UIntPtr.Zero);
+        keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
     }
 
     private const uint WM_PASTE = 0x0302;

@@ -118,11 +118,31 @@ Run `PasteFix\dist\PasteFix.exe`. It sits in the system tray:
 
 Settings live in `%APPDATA%\PasteFix\settings.json` and apply immediately.
 
+### How the hotkey delivers the paste
+
+Alt+V cleans the clipboard and then has to make the foreground window paste it.
+How, depends on what that window is — measured 2026-08-09, both times because
+the clipboard came out clean and nothing was pasted:
+
+| Window class | Paste sent as |
+|---|---|
+| `org.wezfurlong.wezterm` | Ctrl+Shift+V keystrokes |
+| `CASCADIA_HOSTING_WINDOW_CLASS` (Windows Terminal) | Ctrl+V keystrokes |
+| anything else | `WM_PASTE` |
+
+Both terminals host their input in a child surface, so a `WM_PASTE` posted to
+the top-level window is silently dropped. Ordinary Edit controls do handle it,
+and there it is the better channel — immune to focus, stuck modifier keys and
+custom key bindings. Every Alt+V press logs which branch it took to
+`%APPDATA%\PasteFix\pastefix.log`; if a terminal ever cleans but does not paste,
+that log line is the first thing to read.
+
 ## Supported environment
 
-Verified on **WezTerm + PowerShell 7.6 on Windows 11** only. That is the one
-setup it has actually been measured against. Windows Terminal, conhost and
-non-PowerShell shells are untested — not unsupported, just unmeasured. The
+Verified on **WezTerm + PowerShell 7.6 on Windows 11**. Windows Terminal is
+covered for the paste path only (its `WM_PASTE` blindness was measured on
+2026-08-09 and worked around); the rest is untested there. conhost and
+non-PowerShell shells remain unmeasured — not unsupported, just untested. The
 line-ending finding above is specific to WezTerm and may not hold elsewhere.
 
 ### Known limitation
