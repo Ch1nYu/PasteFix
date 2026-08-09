@@ -4,6 +4,10 @@
 
 A small Windows tray app. It does two things and nothing else.
 
+> **This file is the documentation of record.** It describes how the program
+> behaves now. The dated files in `docs/records/` describe how it got here and are
+> deliberately not kept up to date.
+
 ## The problem
 
 You ask Claude or ChatGPT for a shell script, hit *copy*, paste it into your
@@ -236,3 +240,5 @@ does not update it, and the tray app must be closed before republishing.
 - `PasteFix/legacy` — the old Node.js CLI, kept for reference
 - `tools/paste-probe.ps1` — measures what a terminal actually receives on paste
 - `tools/manual-test.ps1` — end-to-end smoke test against a running tray app
+- `tools/manual-cases.ps1` — fifteen cases you paste by hand, with expected results
+- `docs/records/` — dated records of past work; history, not current behaviour

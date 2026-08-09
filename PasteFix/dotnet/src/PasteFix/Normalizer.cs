@@ -11,7 +11,8 @@ namespace PasteFix;
 ///
 /// Nothing else. It does not strip prompts, delete comments, remove markdown
 /// fences, or rewrite line endings; those rules were removed on 2026-08-09
-/// because none of them had a real scenario behind it (PLAN-2026-08-09.md).
+/// because none of them had a real scenario behind it — see
+/// docs/records/PLAN-2026-08-09.md.
 ///
 /// Dedent is structure-preserving, so AutoMonitor may run it on any clipboard
 /// content. Normalize rewrites the text — it joins continuations and repairs a
@@ -92,8 +93,8 @@ public static partial class Normalizer
     /// It is not sound, and the gap is known: a YAML multi-line plain scalar
     /// (<c>- a</c> / <c>  b</c>) has meaningful indentation with no opener above
     /// it, and this rewrites the string. That trade was made deliberately on
-    /// 2026-08-10; PLAN-2026-08-09.md records the standard it is being weighed
-    /// against.
+    /// 2026-08-10; docs/records/PLAN-2026-08-09.md records the standard it is
+    /// being weighed against.
     /// </summary>
     private static bool FirstLineMissedTheMargin(List<string> lines)
     {

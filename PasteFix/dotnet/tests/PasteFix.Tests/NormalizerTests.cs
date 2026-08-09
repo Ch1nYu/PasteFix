@@ -10,7 +10,7 @@ namespace PasteFix.Tests;
 ///
 /// Everything else the old implementation did — stripping prompts, deleting `#`
 /// comments, removing markdown fences, rewriting line endings — was removed on
-/// 2026-08-09. See PLAN-2026-08-09.md for why each rule was dropped.
+/// 2026-08-09. See docs/records/PLAN-2026-08-09.md for why each rule was dropped.
 /// </summary>
 public class NormalizerTests
 {
