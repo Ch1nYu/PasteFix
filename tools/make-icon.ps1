@@ -4,7 +4,7 @@
 記號是「一條左邊界豎線 + 三條長短不一的橫線全部靠上去」——直接畫出 Dedent 做的
 事。全部是矩形，沒有曲線也沒有細節，所以 16px 縮下去不會糊。
 
-白色記號挖空在圓角方塊底上：托盤圖示是靜態點陣圖，不會跟著淺色／深色工作列變，
+記號挖空在圓角方塊底上：托盤圖示是靜態點陣圖，不會跟著淺色／深色工作列變，
 填滿的底色是唯一能保證兩種工作列都看得見的做法。
 
 小尺寸（16/24/32）關掉反鋸齒、座標對齊整數像素，讓線條銳利；大尺寸才開。
@@ -23,8 +23,10 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
 $outIco = Join-Path $PSScriptRoot '..\PasteFix\dotnet\src\PasteFix\app.ico'
-$tile   = [System.Drawing.Color]::FromArgb(255, 76, 110, 245)   # indigo，深淺工作列都夠對比
-$ink    = [System.Drawing.Color]::White
+# 黃底：托盤裡幾乎全是藍色圖示，這個顏色是為了在那堆藍當中一眼認出來。
+# 記號必須是深色——白字配黃底對比不足，黃底只有配深字才讀得出來。
+$tile   = [System.Drawing.Color]::FromArgb(255, 250, 176, 5)    # amber
+$ink    = [System.Drawing.Color]::FromArgb(255, 33, 37, 41)     # near-black
 
 # 16 格為基準的版面；其餘尺寸等比放大。
 #   豎線 x=3、y=3..11
