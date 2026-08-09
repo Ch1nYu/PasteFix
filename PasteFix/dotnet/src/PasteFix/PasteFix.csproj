@@ -6,6 +6,15 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- ApplicationIcon only sets the icon Explorer shows on the exe. NotifyIcon
+       needs the file itself at run time, and PublishSingleFile leaves nothing
+       beside the exe to read — so it is embedded and loaded from the stream.
+       Regenerate with tools/make-icon.ps1. -->
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" LogicalName="PasteFix.app.ico" />
+  </ItemGroup>
 
 </Project>

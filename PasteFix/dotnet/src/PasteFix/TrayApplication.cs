@@ -39,7 +39,7 @@ public sealed class TrayApplication : ApplicationContext
 
         _icon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = LoadTrayIcon(),
             Text = "Pastefix — 清洗 AI 產生的終端指令",
             ContextMenuStrip = menu,
             Visible = true,
@@ -50,6 +50,31 @@ public sealed class TrayApplication : ApplicationContext
         _window.HotkeyPressed += OnHotkeyPressed;
 
         ApplySettings();
+    }
+
+    /// The .ico carries 16..256px frames; asking for SmallIconSize picks the one
+    /// drawn for the tray instead of letting Windows downscale a large frame into
+    /// mush. Falls back to the system icon rather than failing to start.
+    private static Icon LoadTrayIcon()
+    {
+        try
+        {
+            using Stream? s = typeof(TrayApplication).Assembly
+                .GetManifestResourceStream("PasteFix.app.ico");
+            if (s is null)
+            {
+                Program.Log("tray icon resource missing, using system icon");
+                return SystemIcons.Application;
+            }
+
+            using var full = new Icon(s);
+            return new Icon(full, SystemInformation.SmallIconSize);
+        }
+        catch (Exception ex)
+        {
+            Program.Log("tray icon load failed: " + ex);
+            return SystemIcons.Application;
+        }
     }
 
     private System.Windows.Forms.Timer? _clipDebounce;
