@@ -1,2 +1,14 @@
 Thumbs.db
 .DS_Store
+
+# .NET
+PasteFix/dotnet/**/bin/
+PasteFix/dotnet/**/obj/
+*.user
+PasteFix/dist/
+
+# 意外產物：手動測試時真的跑到了 `npm install --save express`
+node_modules/
+
+# 其他工具的暫存
+.freebuff/
