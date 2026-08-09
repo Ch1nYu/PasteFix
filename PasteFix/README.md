@@ -151,15 +151,20 @@ line-ending finding above is specific to WezTerm and may not hold elsewhere.
 ### When the selection misses the left margin
 
 Copying a code block from the **Claude Code terminal UI** gives you two spaces on
-every line except the first. The cause is the selection, not the app: the block is
-drawn with a two-column left margin, and a drag that starts at the first character
-of line 1 begins *after* that margin while every later line is taken whole. The
-common prefix is therefore empty, and dedenting — which by definition removes what
-every line shares — has nothing to remove.
+every line except the first (measured 2026-08-09). The common prefix is therefore
+empty, and dedenting — which by definition removes what every line shares — has
+nothing to remove.
 
-The clean fix is on the copying side: **start the drag in the margin, at the left
-edge of line 1.** All lines then carry the same two spaces and an ordinary dedent
-takes them off.
+**Why the first line differs is inferred, not measured.** The block is drawn with
+a two-column left margin, so a drag that starts at the first character of line 1
+would begin *after* that margin while every later line is taken whole. That fits
+the asymmetry exactly, but nobody has run the experiment. It takes twenty seconds:
+copy the same block twice, once dragging from the first character and once from
+the left edge of the line, and compare. If the second copy comes out with a
+uniform two-space indent, the explanation holds and **starting the drag in the
+margin is the real fix** — an ordinary dedent then takes the margin off. If both
+copies come out the same, this paragraph is wrong and the workaround below is all
+there is.
 
 For text already on the clipboard there is a tray item, **立即清洗（第一行沒縮排）**.
 It dedents normally, then dedents lines 2..n a second time on their own:
