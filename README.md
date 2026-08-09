@@ -4,7 +4,9 @@
 in one go.** A small Windows tray app that does two things and nothing else:
 
 1. **Removes the indent common to every line** — relative indentation is kept, so
-   Python, YAML and here-strings survive.
+   Python, YAML and here-strings survive. If the selection missed the left margin
+   and line 1 came out flush while the rest did not, that margin is taken off too,
+   on the strength of a grammatical rule rather than a guess.
 2. **Joins continuation lines** — a trailing `\`, backtick, `&&` or `|` is
    consumed and the lines are glued into one command.
 

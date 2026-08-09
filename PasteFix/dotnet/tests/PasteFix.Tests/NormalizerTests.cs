@@ -94,76 +94,110 @@ public class NormalizerTests
         Assert.Equal("", Normalizer.Dedent("   \n\n  "));
     }
 
-    // ---------------------------------------------- dedent, first line ignored
+    // -------------------------------------------------- missed left margin
 
     // A mouse selection that starts at the first character of line 1 misses the
     // left margin every following line carries. The common prefix is then empty
-    // and an ordinary dedent can do nothing — hence the opt-in second pass.
+    // and an ordinary dedent can do nothing. Normalize strips it when line 1 is
+    // syntactically finished, because then the indent below has no grammar to
+    // justify it. Dedent never does — AutoMonitor runs Dedent.
 
     [Fact]
-    public void IgnoringFirstLineIndentStripsMarginTheSelectionMissed()
+    public void MarginIsStrippedWhenFirstLineIsAFinishedStatement()
     {
-        Assert.Equal(
-            "if (x) {\n    y = 1\n}",
-            Normalizer.Dedent("if (x) {\n      y = 1\n  }", ignoreFirstLineIndent: true));
+        // Python rejects the input outright: "unexpected indent" on line 2.
+        Assert.Equal("x = 1\ny = 2", Normalizer.Normalize("x = 1\n  y = 2"));
     }
 
     [Fact]
-    public void IgnoringFirstLineIndentFixesAFlatBlock()
+    public void MarginIsStrippedFromAFlatScript()
     {
-        // Python rejects this one outright: "unexpected indent" on line 2.
         Assert.Equal(
-            "x = 1\ny = 2",
-            Normalizer.Dedent("x = 1\n  y = 2", ignoreFirstLineIndent: true));
+            "$ErrorActionPreference = 'Stop'\nGet-Process\nWrite-Host done",
+            Normalizer.Normalize("$ErrorActionPreference = 'Stop'\n  Get-Process\n  Write-Host done"));
     }
 
     [Fact]
-    public void IgnoringFirstLineIndentStillDedentsNormallyFirst()
+    public void MarginIsKeptAfterAColonBecauseItOpensABlock()
     {
-        // Selection did catch the margin: the ordinary pass handles it and the
-        // second pass finds nothing left to take.
-        Assert.Equal(
-            "if (x) {\n    y = 1\n}",
-            Normalizer.Dedent("  if (x) {\n      y = 1\n  }", ignoreFirstLineIndent: true));
+        // The body is uniformly shifted, which is still valid Python. Stripping
+        // here would flatten a real class instead.
+        string input = "class A:\n      def f(self):\n          return 1";
+        Assert.Equal(input, Normalizer.Normalize(input));
     }
 
     [Fact]
-    public void IgnoringFirstLineIndentIsDestructiveOnRealPython()
-    {
-        // Documented, not a defect: the option cannot tell a missed margin from
-        // a class header, which is why nothing may switch it on but the user.
-        Assert.Equal(
-            "class A:\ndef f(self):\n    return 1",
-            Normalizer.Dedent("class A:\n    def f(self):\n        return 1", ignoreFirstLineIndent: true));
-    }
-
-    [Fact]
-    public void IgnoringFirstLineIndentIsOffByDefault()
+    public void MarginIsKeptInsideAnUnclosedBracket()
     {
         string input = "if (x) {\n      y = 1\n  }";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptInsideAHereString()
+    {
+        string input = "$t = @\"\n      line1\n      line2\n\"@";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptAfterAYamlKey()
+    {
+        string input = "services:\n    api:\n      build: .";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptAfterAFullwidthColon()
+    {
+        // Found by sweeping this repository: a Chinese "用法：" heading followed
+        // by an indented command list was the one false repair in 380 samples.
+        string input = "用法：\n  . tools\\manual-cases.ps1\n  Show-Cases";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginRepairDoesNotFireWhenLineOneIsIndented()
+    {
+        // The selection caught the margin; the ordinary dedent already took it.
+        Assert.Equal("if (x) {\n    y = 1\n}", Normalizer.Normalize("  if (x) {\n      y = 1\n  }"));
+    }
+
+    [Fact]
+    public void MarginRepairRewritesAYamlPlainScalar()
+    {
+        // Known gap, asserted rather than hidden: `- a` opens nothing, so the
+        // indent below looks unjustified, but it belongs to the scalar "a b".
+        Assert.Equal("- a\nb", Normalizer.Normalize("- a\n  b"));
+    }
+
+    [Fact]
+    public void DedentNeverRepairsTheMargin()
+    {
+        // AutoMonitor's path stays structure-preserving.
+        string input = "x = 1\n  y = 2";
         Assert.Equal(input, Normalizer.Dedent(input));
     }
 
     [Fact]
-    public void IgnoringFirstLineIndentCombinesWithMerging()
+    public void MarginRepairIsIdempotent()
+    {
+        string once = Normalizer.Normalize("x = 1\n  y = 2");
+        Assert.Equal(once, Normalizer.Normalize(once));
+    }
+
+    [Fact]
+    public void MarginRepairCombinesWithMerging()
     {
         Assert.Equal(
             "docker run -e FOO=bar image",
-            Normalizer.Normalize(
-                "docker run \\\n      -e FOO=bar \\\n      image", ignoreFirstLineIndent: true));
+            Normalizer.Normalize("docker run \\\n      -e FOO=bar \\\n      image"));
     }
 
     [Fact]
-    public void IgnoringFirstLineIndentIsIdempotent()
+    public void MarginRepairNeedsMoreThanOneLine()
     {
-        string once = Normalizer.Dedent("if (x) {\n      y = 1\n  }", ignoreFirstLineIndent: true);
-        Assert.Equal(once, Normalizer.Dedent(once, ignoreFirstLineIndent: true));
-    }
-
-    [Fact]
-    public void IgnoringFirstLineIndentHandlesASingleLine()
-    {
-        Assert.Equal("git status", Normalizer.Dedent("git status", ignoreFirstLineIndent: true));
+        Assert.Equal("git status", Normalizer.Normalize("git status"));
     }
 
     // ------------------------------------------------- line endings preserved

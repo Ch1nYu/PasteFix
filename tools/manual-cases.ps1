@@ -90,11 +90,22 @@ $script:Cases = [ordered]@{
         AltV   = 'git status'
     }
     M = @{
-        Why    = '選取漏掉左邊界：第一行沒縮排，其餘各行多兩格。Ctrl+V 與 Alt+V 都救不了，要用托盤的「立即清洗（第一行沒縮排）」'
+        Why    = '選取漏掉左邊界：第一行沒縮排，其餘各行多兩格。第一行是完整敘述 → Alt+V 修掉'
+        Raw    = (@('$ErrorActionPreference = ''Stop''', '  Get-Process', '  Write-Host done') -join "`n")
+        CtrlV  = '（原樣不動——共同前綴是空的，Dedent 無事可做）'
+        AltV   = (@('$ErrorActionPreference = ''Stop''', 'Get-Process', 'Write-Host done') -join "`n")
+    }
+    N = @{
+        Why    = '同樣的形狀，但第一行以冒號結尾 → 下面的縮排有文法理由，不准動（動了就是壓平 Python）'
+        Raw    = (@('class A:', '      def f(self):', '          return 1') -join "`n")
+        CtrlV  = '（原樣不動）'
+        AltV   = '（原樣不動——縮排整體偏移的 Python 仍然合法）'
+    }
+    O = @{
+        Why    = '同樣的形狀，但第一行有未閉合的括號 → 不准動'
         Raw    = (@('if (x) {', '      y = 1', '  }') -join "`n")
-        CtrlV  = '（原樣不動——共同前綴是空的，dedent 無事可做）'
-        AltV   = '（原樣不動）'
-        Menu   = (@('if (x) {', '    y = 1', '}') -join "`n")
+        CtrlV  = '（原樣不動）'
+        AltV   = '（原樣不動——shell 不在乎行首空白，多兩格照跑）'
     }
 }
 
@@ -110,9 +121,6 @@ function Show-Cases {
         Write-Host ("    原始   : {0}" -f (Show-Text $c.Raw))
         Write-Host ("    Ctrl+V : {0}" -f (Show-Text $c.CtrlV)) -ForegroundColor DarkGray
         Write-Host ("    Alt+V  : {0}" -f (Show-Text $c.AltV))  -ForegroundColor DarkGray
-        if ($c.Menu) {
-            Write-Host ("    托盤   : {0}" -f (Show-Text $c.Menu)) -ForegroundColor DarkGray
-        }
     }
 }
 
@@ -135,8 +143,5 @@ function Use-Case {
     Write-Host ("  AutoMonitor 之後   : {0}" -f (Show-Text (Get-Clipboard -Raw))) -ForegroundColor Yellow
     Write-Host ("  這一行就是 Ctrl+V 會貼出來的東西；預期 {0}" -f (Show-Text $c.CtrlV))
     Write-Host ("  按 Alt+V 則預期     : {0}" -f (Show-Text $c.AltV)) -ForegroundColor Green
-    if ($c.Menu) {
-        Write-Host ("  托盤「立即清洗（第一行沒縮排）」: {0}" -f (Show-Text $c.Menu)) -ForegroundColor Green
-    }
     Write-Host "  （現在動手：Ctrl+V 看一次，Ctrl+C 清掉，再 Use-Case $key 後按 Alt+V 看一次）" -ForegroundColor DarkGray
 }

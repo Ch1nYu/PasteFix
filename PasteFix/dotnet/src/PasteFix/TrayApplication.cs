@@ -21,14 +21,6 @@ public sealed class TrayApplication : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard(force: true)));
-        menu.Items.Add(new ToolStripMenuItem(
-            "立即清洗（第一行沒縮排）", null,
-            (_, _) => CleanClipboard(force: true, ignoreFirstLineIndent: true))
-        {
-            ToolTipText =
-                "滑鼠是從第一行的文字起點拖曳、漏掉左邊界時用這個。\n"
-                + "它會改掉第一行與其餘各行的相對縮排，Python 這類靠縮排的內容會被弄壞。",
-        });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
         menu.Items.Add(_hotkeyItem);
@@ -196,14 +188,7 @@ public sealed class TrayApplication : ApplicationContext
     /// text. AutoMonitor passes false and only dedents, which preserves structure
     /// — so it needs no guess about whether the clipboard "looks like a command".
     /// </param>
-    /// <param name="ignoreFirstLineIndent">
-    /// Only ever true for the tray item that says so. It rewrites the indent of
-    /// line 1 relative to the rest, which is right when the selection missed the
-    /// left margin and wrong for everything else — the user is the only one who
-    /// knows which.
-    /// </param>
-    private bool CleanClipboard(
-        bool showNotification = true, bool force = false, bool ignoreFirstLineIndent = false)
+    private bool CleanClipboard(bool showNotification = true, bool force = false)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
@@ -214,9 +199,7 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        string cleaned = force
-            ? Normalizer.Normalize(text, ignoreFirstLineIndent)
-            : Normalizer.Dedent(text);
+        string cleaned = force ? Normalizer.Normalize(text) : Normalizer.Dedent(text);
         Trace($"  cleaned=[{cleaned}]");
         if (cleaned == text)
         {
