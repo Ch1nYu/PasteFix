@@ -1,5 +1,10 @@
 # PasteFix 貼上問題調查報告
 
+> **歷史記錄 — 2026-08-08 當時的狀態，不描述現況。**
+> 現在的行為一律以 [`PasteFix/README.md`](../../PasteFix/README.md) 為準。
+> 這份報告裡的災情，成因是「無條件對剪貼簿做語意清洗」，該行為已於 2026-08-09
+> 移除。留著是因為它是後來每一條刪除決定的證據來源。
+
 - 日期：2026-08-08
 - 環境：Windows 11 26200 / PowerShell 7.6.4 / PSReadLine 2.4.5 / starship 提示字元（續行符號 `∙`）
 - 事發時 PasteFix.exe **正在執行**（PID 35980，啟動 01:55:09，測試時間 02:05），`%APPDATA%\PasteFix\settings.json` = `{"AutoMonitor": true, "HotkeyEnabled": true}`

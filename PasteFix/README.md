@@ -4,6 +4,10 @@
 
 A small Windows tray app. It does two things and nothing else.
 
+> **This file is the documentation of record.** It describes how the program
+> behaves now. The dated files in `docs/records/` describe how it got here and are
+> deliberately not kept up to date.
+
 ## The problem
 
 You ask Claude or ChatGPT for a shell script, hit *copy*, paste it into your
@@ -145,12 +149,67 @@ covered for the paste path only (its `WM_PASTE` blindness was measured on
 non-PowerShell shells remain unmeasured — not unsupported, just untested. The
 line-ending finding above is specific to WezTerm and may not hold elsewhere.
 
-### Known limitation
+### When the selection misses the left margin
 
-Copying a code block from the **Claude Code terminal UI** adds two spaces to
-every line except the first. Since the first line then has no indent, the common
-prefix is empty and dedenting does nothing. Copying from the Claude or ChatGPT
-apps themselves is unaffected (measured: 4-space indentation, zero tabs).
+Copying a code block from the **Claude Code terminal UI** gives you two spaces on
+every line except the first (measured 2026-08-09). The common prefix is therefore
+empty, and dedenting — which by definition removes what every line shares — has
+nothing to remove.
+
+**Why the first line differs is inferred, not measured.** The block is drawn with
+a two-column left margin, so a drag that starts at the first character of line 1
+would begin *after* that margin while every later line is taken whole. That fits
+the asymmetry exactly, but nobody has run the experiment. It takes twenty seconds:
+copy the same block twice, once dragging from the first character and once from
+the left edge of the line, and compare. If the second copy comes out with a
+uniform two-space indent, the explanation holds and **starting the drag in the
+margin is the real fix** — an ordinary dedent then takes the margin off. If both
+copies come out the same, this paragraph is wrong and the workaround below is all
+there is.
+
+For text already on the clipboard, **立即清洗 / Alt+V repairs it** — but only when
+line 1 is a finished statement:
+
+```
+x = 1              x = 1          for i in ...:        for i in ...:
+  y = 2      →     y = 2                print(i)   →         print(i)
+                                   (unchanged)
+```
+
+An unclosed bracket, an open quote, a here-string, a heredoc, a continuation
+marker or a trailing `:` are all reasons for the next line to sit further in.
+Rule every one of them out and the indent below has no grammar left to justify
+it — in Python an indent may only follow a colon, so `x = 1` with an indented
+`y = 2` under it is not merely unusual, it is an IndentationError. That is the
+whole basis for the decision; it is not a judgement about whether the text
+"looks like" a command.
+
+The refusals are the good half of the bargain. **Where the rule declines, the
+unrepaired text is still correct**: a Python body under `for i in ...:` shifted
+by a uniform two spaces is valid Python, and inside brackets or after a
+continuation marker leading whitespace never survives to mean anything. Where it
+acts, the unrepaired text was already broken.
+
+**It is not sound, and here is the gap.** A YAML multi-line plain scalar has
+meaningful indentation with nothing opening it:
+
+```
+- a          →     - a         # the scalar was "a b"; now it is two nodes
+  b                b
+```
+
+Nothing detects that. The trade was made deliberately on 2026-08-10 — the risk
+is silent rewriting of string content, the gain is that the common case needs no
+decision from you. `MarginRepairRewritesAYamlPlainScalar` asserts the damage so
+it stays visible rather than becoming folklore.
+
+Two measurements bound it. Sweeping 381 six-line samples of this repository's own
+source: zero non-idempotent results, and the rule fired exactly once — on a
+Chinese `用法：` heading above an indented command list. That is why the fullwidth
+colon counts as an opener too. After that fix it fires zero times on real source.
+
+Copying from the Claude or ChatGPT apps themselves is unaffected (measured:
+4-space indentation, zero tabs).
 
 ## Build from source
 
@@ -181,3 +240,6 @@ does not update it, and the tray app must be closed before republishing.
 - `PasteFix/legacy` — the old Node.js CLI, kept for reference
 - `tools/paste-probe.ps1` — measures what a terminal actually receives on paste
 - `tools/manual-test.ps1` — end-to-end smoke test against a running tray app
+- `tools/manual-cases.ps1` — fifteen cases you paste by hand, with expected results
+- `tools/toggle-test.ps1` — regression test for the two tray toggles
+- `docs/records/` — dated records of past work; history, not current behaviour

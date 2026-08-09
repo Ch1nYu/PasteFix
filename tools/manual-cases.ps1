@@ -89,6 +89,24 @@ $script:Cases = [ordered]@{
         CtrlV  = 'git status（前後無空行）'
         AltV   = 'git status'
     }
+    M = @{
+        Why    = '選取漏掉左邊界：第一行沒縮排，其餘各行多兩格。第一行是完整敘述 → Alt+V 修掉'
+        Raw    = (@('$ErrorActionPreference = ''Stop''', '  Get-Process', '  Write-Host done') -join "`n")
+        CtrlV  = '（原樣不動——共同前綴是空的，Dedent 無事可做）'
+        AltV   = (@('$ErrorActionPreference = ''Stop''', 'Get-Process', 'Write-Host done') -join "`n")
+    }
+    N = @{
+        Why    = '同樣的形狀，但第一行以冒號結尾 → 下面的縮排有文法理由，不准動（動了就是壓平 Python）'
+        Raw    = (@('class A:', '      def f(self):', '          return 1') -join "`n")
+        CtrlV  = '（原樣不動）'
+        AltV   = '（原樣不動——縮排整體偏移的 Python 仍然合法）'
+    }
+    O = @{
+        Why    = '同樣的形狀，但第一行有未閉合的括號 → 不准動'
+        Raw    = (@('if (x) {', '      y = 1', '  }') -join "`n")
+        CtrlV  = '（原樣不動）'
+        AltV   = '（原樣不動——shell 不在乎行首空白，多兩格照跑）'
+    }
 }
 
 function Show-Text([string]$s) {

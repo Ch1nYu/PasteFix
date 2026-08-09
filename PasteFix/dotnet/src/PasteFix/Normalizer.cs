@@ -11,11 +11,13 @@ namespace PasteFix;
 ///
 /// Nothing else. It does not strip prompts, delete comments, remove markdown
 /// fences, or rewrite line endings; those rules were removed on 2026-08-09
-/// because none of them had a real scenario behind it (PLAN-2026-08-09.md).
+/// because none of them had a real scenario behind it — see
+/// docs/records/PLAN-2026-08-09.md.
 ///
 /// Dedent is structure-preserving, so AutoMonitor may run it on any clipboard
-/// content. Joining continuations changes the text, so it only runs when the
-/// user explicitly asks for it (Alt+V / the tray menu).
+/// content. Normalize rewrites the text — it joins continuations and repairs a
+/// selection that missed the left margin — so it only runs when the user asks
+/// for it (Alt+V / the tray menu).
 /// </summary>
 public static partial class Normalizer
 {
@@ -57,6 +59,9 @@ public static partial class Normalizer
     /// when it sits at bracket depth zero, outside any quoted string, and outside
     /// a here-string — in code such a marker is nearly always something else
     /// (<c>if (a &amp;&amp;</c>, <c>do { \</c>).
+    ///
+    /// It also repairs a selection that missed the left margin — see
+    /// <see cref="FirstLineMissedTheMargin"/>.
     /// </summary>
     public static string Normalize(string input)
     {
@@ -64,7 +69,49 @@ public static partial class Normalizer
         if (lines.Count == 0) return "";
 
         StripCommonIndent(lines);
+        if (FirstLineMissedTheMargin(lines)) StripCommonIndent(lines, from: 1);
         return string.Join(eol, JoinContinuations(lines));
+    }
+
+    /// <summary>
+    /// True when the indent shared by lines 2..n has no grammatical reason to be
+    /// there, which makes it a left margin the selection took and line 1 missed.
+    ///
+    /// Line 1 has to be finished for that to hold. An unclosed bracket, an open
+    /// quote, a here-string, a heredoc or a continuation marker are all reasons
+    /// for the next line to sit further in, and a trailing <c>:</c> opens a block
+    /// in Python and in YAML. Rule out every one of those and the indent below
+    /// is left with nothing to justify it.
+    ///
+    /// Where this says no, the unrepaired text is still correct: a Python body
+    /// under <c>for i in ...:</c> shifted by a uniform two spaces is valid Python,
+    /// and inside brackets or after a continuation marker leading whitespace does
+    /// not survive to mean anything. Where it says yes, the unrepaired text was
+    /// already wrong — <c>x = 1</c> followed by an indented <c>y = 2</c> is an
+    /// IndentationError.
+    ///
+    /// It is not sound, and the gap is known: a YAML multi-line plain scalar
+    /// (<c>- a</c> / <c>  b</c>) has meaningful indentation with no opener above
+    /// it, and this rewrites the string. That trade was made deliberately on
+    /// 2026-08-10; docs/records/PLAN-2026-08-09.md records the standard it is
+    /// being weighed against.
+    /// </summary>
+    private static bool FirstLineMissedTheMargin(List<string> lines)
+    {
+        if (lines.Count < 2) return false;
+        if (IndentLength(lines[0]) != 0) return false;
+
+        var scan = new ScanState();
+        if (ScanLine(lines[0], scan)) return false;                                  // continues
+        if (scan.Depth != 0 || scan.Quote != '\0' || scan.HereEnd is not null) return false;
+        // A trailing colon opens a block in Python and YAML, and introduces a
+        // list in prose. The fullwidth form earns its place: sweeping 380 samples
+        // of this repository on 2026-08-10 produced exactly one repair, and it
+        // was a Chinese "用法：" followed by an indented command list.
+        char last = lines[0].TrimEnd() is { Length: > 0 } t ? t[^1] : '\0';
+        if (last is ':' or '：') return false;
+
+        return CommonIndent(lines, from: 1).Length > 0;
     }
 
     // ------------------------------------------------------------------ splitting
@@ -92,25 +139,38 @@ public static partial class Normalizer
 
     // -------------------------------------------------------------------- dedent
 
-    private static void StripCommonIndent(List<string> lines)
+    /// <param name="from">
+    /// First line to consider. Only ever 1, for the "the selection missed the
+    /// left margin on line 1" case — see <see cref="FirstLineMissedTheMargin"/>.
+    /// </param>
+    private static void StripCommonIndent(List<string> lines, int from = 0)
     {
-        string? common = null;
-        foreach (string line in lines)
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
+        string common = CommonIndent(lines, from);
+        if (common.Length == 0) return;
 
-            string indent = line[..IndentLength(line)];
-            common = common is null ? indent : CommonPrefix(common, indent);
-            if (common.Length == 0) return;
-        }
-        if (string.IsNullOrEmpty(common)) return;
-
-        for (int i = 0; i < lines.Count; i++)
+        for (int i = from; i < lines.Count; i++)
         {
             lines[i] = lines[i].StartsWith(common, StringComparison.Ordinal)
                 ? lines[i][common.Length..]
                 : lines[i].TrimStart();
         }
+    }
+
+    /// The whitespace prefix every non-blank line from <paramref name="from"/>
+    /// onwards shares; empty when they share none.
+    private static string CommonIndent(List<string> lines, int from)
+    {
+        string? common = null;
+        for (int i = from; i < lines.Count; i++)
+        {
+            string line = lines[i];
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            string indent = line[..IndentLength(line)];
+            common = common is null ? indent : CommonPrefix(common, indent);
+            if (common.Length == 0) return "";
+        }
+        return common ?? "";
     }
 
     private static int IndentLength(string line)

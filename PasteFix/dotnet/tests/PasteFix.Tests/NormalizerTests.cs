@@ -10,7 +10,7 @@ namespace PasteFix.Tests;
 ///
 /// Everything else the old implementation did — stripping prompts, deleting `#`
 /// comments, removing markdown fences, rewriting line endings — was removed on
-/// 2026-08-09. See PLAN-2026-08-09.md for why each rule was dropped.
+/// 2026-08-09. See docs/records/PLAN-2026-08-09.md for why each rule was dropped.
 /// </summary>
 public class NormalizerTests
 {
@@ -92,6 +92,112 @@ public class NormalizerTests
     public void DedentReturnsEmptyForBlankInput()
     {
         Assert.Equal("", Normalizer.Dedent("   \n\n  "));
+    }
+
+    // -------------------------------------------------- missed left margin
+
+    // A mouse selection that starts at the first character of line 1 misses the
+    // left margin every following line carries. The common prefix is then empty
+    // and an ordinary dedent can do nothing. Normalize strips it when line 1 is
+    // syntactically finished, because then the indent below has no grammar to
+    // justify it. Dedent never does — AutoMonitor runs Dedent.
+
+    [Fact]
+    public void MarginIsStrippedWhenFirstLineIsAFinishedStatement()
+    {
+        // Python rejects the input outright: "unexpected indent" on line 2.
+        Assert.Equal("x = 1\ny = 2", Normalizer.Normalize("x = 1\n  y = 2"));
+    }
+
+    [Fact]
+    public void MarginIsStrippedFromAFlatScript()
+    {
+        Assert.Equal(
+            "$ErrorActionPreference = 'Stop'\nGet-Process\nWrite-Host done",
+            Normalizer.Normalize("$ErrorActionPreference = 'Stop'\n  Get-Process\n  Write-Host done"));
+    }
+
+    [Fact]
+    public void MarginIsKeptAfterAColonBecauseItOpensABlock()
+    {
+        // The body is uniformly shifted, which is still valid Python. Stripping
+        // here would flatten a real class instead.
+        string input = "class A:\n      def f(self):\n          return 1";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptInsideAnUnclosedBracket()
+    {
+        string input = "if (x) {\n      y = 1\n  }";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptInsideAHereString()
+    {
+        string input = "$t = @\"\n      line1\n      line2\n\"@";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptAfterAYamlKey()
+    {
+        string input = "services:\n    api:\n      build: .";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginIsKeptAfterAFullwidthColon()
+    {
+        // Found by sweeping this repository: a Chinese "用法：" heading followed
+        // by an indented command list was the one false repair in 380 samples.
+        string input = "用法：\n  . tools\\manual-cases.ps1\n  Show-Cases";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void MarginRepairDoesNotFireWhenLineOneIsIndented()
+    {
+        // The selection caught the margin; the ordinary dedent already took it.
+        Assert.Equal("if (x) {\n    y = 1\n}", Normalizer.Normalize("  if (x) {\n      y = 1\n  }"));
+    }
+
+    [Fact]
+    public void MarginRepairRewritesAYamlPlainScalar()
+    {
+        // Known gap, asserted rather than hidden: `- a` opens nothing, so the
+        // indent below looks unjustified, but it belongs to the scalar "a b".
+        Assert.Equal("- a\nb", Normalizer.Normalize("- a\n  b"));
+    }
+
+    [Fact]
+    public void DedentNeverRepairsTheMargin()
+    {
+        // AutoMonitor's path stays structure-preserving.
+        string input = "x = 1\n  y = 2";
+        Assert.Equal(input, Normalizer.Dedent(input));
+    }
+
+    [Fact]
+    public void MarginRepairIsIdempotent()
+    {
+        string once = Normalizer.Normalize("x = 1\n  y = 2");
+        Assert.Equal(once, Normalizer.Normalize(once));
+    }
+
+    [Fact]
+    public void MarginRepairCombinesWithMerging()
+    {
+        Assert.Equal(
+            "docker run -e FOO=bar image",
+            Normalizer.Normalize("docker run \\\n      -e FOO=bar \\\n      image"));
+    }
+
+    [Fact]
+    public void MarginRepairNeedsMoreThanOneLine()
+    {
+        Assert.Equal("git status", Normalizer.Normalize("git status"));
     }
 
     // ------------------------------------------------- line endings preserved

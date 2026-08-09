@@ -43,8 +43,8 @@ public sealed class MessageWindow : NativeWindow
         if (enabled == _clipboardListening) return;
         _clipboardListening = enabled;
 
-        if (enabled) AddClipboardFormatListener(Handle);
-        else RemoveClipboardFormatListener(Handle);
+        bool ok = enabled ? AddClipboardFormatListener(Handle) : RemoveClipboardFormatListener(Handle);
+        Program.Log($"  clipboard listener {(enabled ? "on" : "off")} ok={ok}");
     }
 
     public void SetHotkeyListening(bool enabled)
@@ -52,8 +52,12 @@ public sealed class MessageWindow : NativeWindow
         if (enabled == _hotkeyListening) return;
         _hotkeyListening = enabled;
 
-        if (enabled) RegisterHotKey(Handle, HotkeyId, ModAlt | ModNoRepeat, (uint)Keys.V);
-        else UnregisterHotKey(Handle, HotkeyId);
+        // RegisterHotKey fails when another process already owns Alt+V. Silence
+        // there would look exactly like the toggle not working.
+        bool ok = enabled
+            ? RegisterHotKey(Handle, HotkeyId, ModAlt | ModNoRepeat, (uint)Keys.V)
+            : UnregisterHotKey(Handle, HotkeyId);
+        Program.Log($"  hotkey Alt+V {(enabled ? "registered" : "unregistered")} ok={ok}");
     }
 
     protected override void WndProc(ref Message m)
