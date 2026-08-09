@@ -16,8 +16,18 @@ public sealed class TrayApplication : ApplicationContext
     {
         _settings = Settings.Load();
 
-        _autoMonitorItem = new ToolStripMenuItem("全自動監聽", null, OnAutoMonitorToggle) { Checked = _settings.AutoMonitor };
-        _hotkeyItem = new ToolStripMenuItem("熱鍵 Alt+V", null, OnHotkeyToggle) { Checked = _settings.HotkeyEnabled };
+        // CheckOnClick 不是裝飾：少了它，點擊不會翻動 Checked，於是 OnXxxToggle
+        // 讀到的永遠是舊值、把同一個值寫回設定，兩個開關就都關不掉（實測 2026-08-10）。
+        _autoMonitorItem = new ToolStripMenuItem("全自動監聽", null, OnAutoMonitorToggle)
+        {
+            CheckOnClick = true,
+            Checked = _settings.AutoMonitor,
+        };
+        _hotkeyItem = new ToolStripMenuItem("熱鍵 Alt+V", null, OnHotkeyToggle)
+        {
+            CheckOnClick = true,
+            Checked = _settings.HotkeyEnabled,
+        };
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard(force: true)));
@@ -173,6 +183,7 @@ public sealed class TrayApplication : ApplicationContext
         _settings.AutoMonitor = _autoMonitorItem.Checked;
         _window.SetClipboardListening(_settings.AutoMonitor);
         _settings.Save();
+        Program.Log($"AutoMonitor -> {_settings.AutoMonitor} (saved to {Settings.FilePath})");
     }
 
     private void OnHotkeyToggle(object? sender, EventArgs e)
@@ -180,6 +191,7 @@ public sealed class TrayApplication : ApplicationContext
         _settings.HotkeyEnabled = _hotkeyItem.Checked;
         _window.SetHotkeyListening(_settings.HotkeyEnabled);
         _settings.Save();
+        Program.Log($"HotkeyEnabled -> {_settings.HotkeyEnabled} (saved to {Settings.FilePath})");
     }
 
     /// <param name="force">

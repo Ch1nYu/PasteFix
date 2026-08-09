@@ -241,4 +241,5 @@ does not update it, and the tray app must be closed before republishing.
 - `tools/paste-probe.ps1` — measures what a terminal actually receives on paste
 - `tools/manual-test.ps1` — end-to-end smoke test against a running tray app
 - `tools/manual-cases.ps1` — fifteen cases you paste by hand, with expected results
+- `tools/toggle-test.ps1` — regression test for the two tray toggles
 - `docs/records/` — dated records of past work; history, not current behaviour

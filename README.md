@@ -42,6 +42,7 @@ the text and therefore waits to be asked.
 | `PasteFix/dist/PasteFix.exe` | The tray app. A *publish* artifact — `dotnet build` does not update it, and the running tray must be closed before republishing. |
 | `tools/manual-test.ps1` | Hands-off smoke test against the running tray app. |
 | `tools/manual-cases.ps1` | Fifteen cases you paste yourself, for what the smoke test cannot see. |
+| `tools/toggle-test.ps1` | Restarts the tray with each toggle off and then on, and checks the effect. |
 | `tools/paste-probe.ps1` | Measures what a terminal actually hands the application. |
 
 ## Layout
