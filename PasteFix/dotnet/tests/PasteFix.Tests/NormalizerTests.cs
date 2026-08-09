@@ -94,6 +94,78 @@ public class NormalizerTests
         Assert.Equal("", Normalizer.Dedent("   \n\n  "));
     }
 
+    // ---------------------------------------------- dedent, first line ignored
+
+    // A mouse selection that starts at the first character of line 1 misses the
+    // left margin every following line carries. The common prefix is then empty
+    // and an ordinary dedent can do nothing — hence the opt-in second pass.
+
+    [Fact]
+    public void IgnoringFirstLineIndentStripsMarginTheSelectionMissed()
+    {
+        Assert.Equal(
+            "if (x) {\n    y = 1\n}",
+            Normalizer.Dedent("if (x) {\n      y = 1\n  }", ignoreFirstLineIndent: true));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentFixesAFlatBlock()
+    {
+        // Python rejects this one outright: "unexpected indent" on line 2.
+        Assert.Equal(
+            "x = 1\ny = 2",
+            Normalizer.Dedent("x = 1\n  y = 2", ignoreFirstLineIndent: true));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentStillDedentsNormallyFirst()
+    {
+        // Selection did catch the margin: the ordinary pass handles it and the
+        // second pass finds nothing left to take.
+        Assert.Equal(
+            "if (x) {\n    y = 1\n}",
+            Normalizer.Dedent("  if (x) {\n      y = 1\n  }", ignoreFirstLineIndent: true));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentIsDestructiveOnRealPython()
+    {
+        // Documented, not a defect: the option cannot tell a missed margin from
+        // a class header, which is why nothing may switch it on but the user.
+        Assert.Equal(
+            "class A:\ndef f(self):\n    return 1",
+            Normalizer.Dedent("class A:\n    def f(self):\n        return 1", ignoreFirstLineIndent: true));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentIsOffByDefault()
+    {
+        string input = "if (x) {\n      y = 1\n  }";
+        Assert.Equal(input, Normalizer.Dedent(input));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentCombinesWithMerging()
+    {
+        Assert.Equal(
+            "docker run -e FOO=bar image",
+            Normalizer.Normalize(
+                "docker run \\\n      -e FOO=bar \\\n      image", ignoreFirstLineIndent: true));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentIsIdempotent()
+    {
+        string once = Normalizer.Dedent("if (x) {\n      y = 1\n  }", ignoreFirstLineIndent: true);
+        Assert.Equal(once, Normalizer.Dedent(once, ignoreFirstLineIndent: true));
+    }
+
+    [Fact]
+    public void IgnoringFirstLineIndentHandlesASingleLine()
+    {
+        Assert.Equal("git status", Normalizer.Dedent("git status", ignoreFirstLineIndent: true));
+    }
+
     // ------------------------------------------------- line endings preserved
 
     [Fact]

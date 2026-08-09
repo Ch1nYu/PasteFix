@@ -112,6 +112,9 @@ kept in this repo as the instrument for measuring it when it next appears.
 Run `PasteFix\dist\PasteFix.exe`. It sits in the system tray:
 
 - **立即清洗** (*Clean now*) — dedents and joins continuations, then shows a balloon tip.
+- **立即清洗（第一行沒縮排）** (*Clean now, first line unindented*) — the same, plus a
+  second dedent over lines 2..n. For selections that missed the left margin; see
+  [below](#when-the-selection-misses-the-left-margin). Destructive on real code.
 - **全自動監聽** (*Auto monitor*, default on) — dedents the clipboard whenever it changes.
 - **熱鍵 Alt+V** (*Hotkey*, default on) — clean the clipboard and paste, from anywhere.
 - **退出** — quit.
@@ -145,12 +148,35 @@ covered for the paste path only (its `WM_PASTE` blindness was measured on
 non-PowerShell shells remain unmeasured — not unsupported, just untested. The
 line-ending finding above is specific to WezTerm and may not hold elsewhere.
 
-### Known limitation
+### When the selection misses the left margin
 
-Copying a code block from the **Claude Code terminal UI** adds two spaces to
-every line except the first. Since the first line then has no indent, the common
-prefix is empty and dedenting does nothing. Copying from the Claude or ChatGPT
-apps themselves is unaffected (measured: 4-space indentation, zero tabs).
+Copying a code block from the **Claude Code terminal UI** gives you two spaces on
+every line except the first. The cause is the selection, not the app: the block is
+drawn with a two-column left margin, and a drag that starts at the first character
+of line 1 begins *after* that margin while every later line is taken whole. The
+common prefix is therefore empty, and dedenting — which by definition removes what
+every line shares — has nothing to remove.
+
+The clean fix is on the copying side: **start the drag in the margin, at the left
+edge of line 1.** All lines then carry the same two spaces and an ordinary dedent
+takes them off.
+
+For text already on the clipboard there is a tray item, **立即清洗（第一行沒縮排）**.
+It dedents normally, then dedents lines 2..n a second time on their own:
+
+```
+if (x) {                if (x) {
+      y = 1        →        y = 1
+  }                     }
+```
+
+**It is destructive, and no code path turns it on by itself.** The shape it
+repairs is indistinguishable from correct code — `class A:` followed by an
+indented body is the same shape, and this option flattens it. Only you know how
+the text was selected, so only you may ask for it.
+
+Copying from the Claude or ChatGPT apps themselves is unaffected (measured:
+4-space indentation, zero tabs).
 
 ## Build from source
 

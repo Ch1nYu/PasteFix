@@ -15,7 +15,9 @@ namespace PasteFix;
 ///
 /// Dedent is structure-preserving, so AutoMonitor may run it on any clipboard
 /// content. Joining continuations changes the text, so it only runs when the
-/// user explicitly asks for it (Alt+V / the tray menu).
+/// user explicitly asks for it (Alt+V / the tray menu). The
+/// <c>ignoreFirstLineIndent</c> option is destructive for the same reason and
+/// carries the same rule: only the user may switch it on.
 /// </summary>
 public static partial class Normalizer
 {
@@ -42,12 +44,23 @@ public static partial class Normalizer
     /// YAML and here-strings survive. A trailing newline is dropped too — it
     /// would otherwise make a terminal run the last line the moment you paste.
     /// </summary>
-    public static string Dedent(string input)
+    /// <param name="ignoreFirstLineIndent">
+    /// Dedent a second time over lines 2..n only. For the case where a mouse
+    /// selection started at the first character of line 1 and so missed the left
+    /// margin that every following line carries — the common prefix is then empty
+    /// and an ordinary dedent can do nothing.
+    ///
+    /// This is destructive by design: on <c>class A:</c> followed by an indented
+    /// body it flattens code that was correct. Nothing may turn it on by itself;
+    /// only the user, who knows how the text was selected, may ask for it.
+    /// </param>
+    public static string Dedent(string input, bool ignoreFirstLineIndent = false)
     {
         (List<string> lines, string eol) = SplitLines(input);
         if (lines.Count == 0) return "";
 
         StripCommonIndent(lines);
+        if (ignoreFirstLineIndent) StripCommonIndent(lines, from: 1);
         return string.Join(eol, lines);
     }
 
@@ -58,12 +71,14 @@ public static partial class Normalizer
     /// a here-string — in code such a marker is nearly always something else
     /// (<c>if (a &amp;&amp;</c>, <c>do { \</c>).
     /// </summary>
-    public static string Normalize(string input)
+    /// <param name="ignoreFirstLineIndent">See <see cref="Dedent"/>.</param>
+    public static string Normalize(string input, bool ignoreFirstLineIndent = false)
     {
         (List<string> lines, string eol) = SplitLines(input);
         if (lines.Count == 0) return "";
 
         StripCommonIndent(lines);
+        if (ignoreFirstLineIndent) StripCommonIndent(lines, from: 1);
         return string.Join(eol, JoinContinuations(lines));
     }
 
@@ -92,11 +107,16 @@ public static partial class Normalizer
 
     // -------------------------------------------------------------------- dedent
 
-    private static void StripCommonIndent(List<string> lines)
+    /// <param name="from">
+    /// First line to consider. Only ever 1, for the "the selection missed the
+    /// left margin on line 1" case — see <see cref="Dedent"/>.
+    /// </param>
+    private static void StripCommonIndent(List<string> lines, int from = 0)
     {
         string? common = null;
-        foreach (string line in lines)
+        for (int i = from; i < lines.Count; i++)
         {
+            string line = lines[i];
             if (string.IsNullOrWhiteSpace(line)) continue;
 
             string indent = line[..IndentLength(line)];
@@ -105,7 +125,7 @@ public static partial class Normalizer
         }
         if (string.IsNullOrEmpty(common)) return;
 
-        for (int i = 0; i < lines.Count; i++)
+        for (int i = from; i < lines.Count; i++)
         {
             lines[i] = lines[i].StartsWith(common, StringComparison.Ordinal)
                 ? lines[i][common.Length..]
