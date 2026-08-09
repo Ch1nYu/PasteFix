@@ -7,6 +7,13 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <!-- Without this the exe carries no version at all, so a downloaded binary
+         cannot be told apart from any other. Keep it in step with the git tag. -->
+    <Version>1.0.0</Version>
+    <Product>Pastefix</Product>
+    <Description>Makes a multi-line command copied from a chat window pasteable into a terminal in one go.</Description>
+    <Copyright>Copyright (c) 2026 Ch1nYu</Copyright>
   </PropertyGroup>
 
   <!-- ApplicationIcon only sets the icon Explorer shows on the exe. NotifyIcon
