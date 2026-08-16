@@ -130,7 +130,7 @@ public sealed class TrayApplication : ApplicationContext
 
     private static string GetWindowTitle(IntPtr hwnd) { try { var sb = new System.Text.StringBuilder(256); GetWindowText(hwnd, sb, sb.Capacity); return sb.ToString(); } catch { return "?"; } }
 
-    private static void SendPaste()
+    private void SendPaste()
     {
         IntPtr hwnd = GetForegroundWindow();
         if (hwnd == IntPtr.Zero)
@@ -138,28 +138,30 @@ public sealed class TrayApplication : ApplicationContext
             return;
         }
         string className = GetClassName(hwnd);
-        Program.Log($"  SendPaste fg class=[{className}]");
 
         // 現代終端機把輸入放在子表面（WezTerm 的 GL 視窗、Windows Terminal 的 XAML
-        // island），送到頂層 HWND 的 WM_PASTE 會被靜默丟掉——2026-08-09 實測：剪貼簿
-        // 清洗成功、貼上沒發生。這類視窗只能用它自己的貼上鍵驅動。
-        switch (className)
+        // island），送到頂層 HWND 的 WM_PASTE 會被靜默丟掉——2026-08-09 實測：剪貼
+        // 簿清洗成功、貼上沒發生。通道表與理由見 PasteChannelSelector。
+        var channel = PasteChannelSelector.Select(className, _settings.PasteChannels);
+        bool mapped = PasteChannelSelector.IsMapped(className, _settings.PasteChannels);
+        Program.Log(mapped
+            ? $"  SendPaste fg class=[{className}] channel={channel}"
+            : $"  SendPaste fg class=[{className}] channel={channel} (default; override via PasteChannels in {Settings.FilePath})");
+
+        switch (channel)
         {
-            case "org.wezfurlong.wezterm":
-                SendPasteKeys(shift: true);     // WezTerm 的貼上是 Ctrl+Shift+V
-                Program.Log("  paste via Ctrl+Shift+V (WezTerm)");
+            case PasteChannel.CtrlShiftV:
+                SendPasteKeys(shift: true);
                 break;
 
-            case "CASCADIA_HOSTING_WINDOW_CLASS":
-                SendPasteKeys(shift: false);    // Windows Terminal 的預設貼上是 Ctrl+V
-                Program.Log("  paste via Ctrl+V (Windows Terminal)");
+            case PasteChannel.CtrlV:
+                SendPasteKeys(shift: false);
                 break;
 
             default:
                 // 一般的 Edit 控制項（記事本那類）收 WM_PASTE，而且比送鍵可靠：
                 // 不受焦點、修飾鍵狀態與按鍵綁定影響。
                 SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
-                Program.Log("  paste via WM_PASTE");
                 break;
         }
     }
