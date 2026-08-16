@@ -11,6 +11,7 @@ public sealed class TrayApplication : ApplicationContext
     private readonly Settings _settings;
     private readonly ToolStripMenuItem _autoMonitorItem;
     private readonly ToolStripMenuItem _hotkeyItem;
+    private readonly OwnWriteGate _ownWriteGate = new();
 
     public TrayApplication()
     {
@@ -87,6 +88,11 @@ public sealed class TrayApplication : ApplicationContext
             _clipDebounce.Tick += (_, _) =>
             {
                 _clipDebounce.Stop();
+                if (_ownWriteGate.IsOwnWrite(GetClipboardSequenceNumber()))
+                {
+                    Trace("  clipboard sequence is our own write-back, monitor skips");
+                    return;
+                }
                 CleanClipboard(showNotification: false);
             };
         }
@@ -107,7 +113,7 @@ public sealed class TrayApplication : ApplicationContext
         if (hasText)
         {
             string raw = Clipboard.GetText();
-            Program.Log($"  clipboard text=[{Shorten(raw)}]");
+            Program.Log($"  clipboard {ClipboardSummary.Describe(raw)}");
             changed = CleanClipboard(showNotification: false, force: true);
             Program.Log($"  CleanClipboard changed={changed}");
         }
@@ -120,13 +126,11 @@ public sealed class TrayApplication : ApplicationContext
         _icon.ShowBalloonTip(1200, "Pastefix", message, ToolTipIcon.Info);
     }
 
-    private static string Shorten(string s) => s.Length > 100 ? s.Substring(0, 100) + "…" : s;
-
     private static string GetClassName(IntPtr hwnd) { try { var sb = new System.Text.StringBuilder(256); GetClassName(hwnd, sb, sb.Capacity); return sb.ToString(); } catch { return "?"; } }
 
     private static string GetWindowTitle(IntPtr hwnd) { try { var sb = new System.Text.StringBuilder(256); GetWindowText(hwnd, sb, sb.Capacity); return sb.ToString(); } catch { return "?"; } }
 
-    private static void SendPaste()
+    private void SendPaste()
     {
         IntPtr hwnd = GetForegroundWindow();
         if (hwnd == IntPtr.Zero)
@@ -134,28 +138,30 @@ public sealed class TrayApplication : ApplicationContext
             return;
         }
         string className = GetClassName(hwnd);
-        Program.Log($"  SendPaste fg class=[{className}]");
 
         // 現代終端機把輸入放在子表面（WezTerm 的 GL 視窗、Windows Terminal 的 XAML
-        // island），送到頂層 HWND 的 WM_PASTE 會被靜默丟掉——2026-08-09 實測：剪貼簿
-        // 清洗成功、貼上沒發生。這類視窗只能用它自己的貼上鍵驅動。
-        switch (className)
+        // island），送到頂層 HWND 的 WM_PASTE 會被靜默丟掉——2026-08-09 實測：剪貼
+        // 簿清洗成功、貼上沒發生。通道表與理由見 PasteChannelSelector。
+        var channel = PasteChannelSelector.Select(className, _settings.PasteChannels);
+        bool mapped = PasteChannelSelector.IsMapped(className, _settings.PasteChannels);
+        Program.Log(mapped
+            ? $"  SendPaste fg class=[{className}] channel={channel}"
+            : $"  SendPaste fg class=[{className}] channel={channel} (default; override via PasteChannels in {Settings.FilePath})");
+
+        switch (channel)
         {
-            case "org.wezfurlong.wezterm":
-                SendPasteKeys(shift: true);     // WezTerm 的貼上是 Ctrl+Shift+V
-                Program.Log("  paste via Ctrl+Shift+V (WezTerm)");
+            case PasteChannel.CtrlShiftV:
+                SendPasteKeys(shift: true);
                 break;
 
-            case "CASCADIA_HOSTING_WINDOW_CLASS":
-                SendPasteKeys(shift: false);    // Windows Terminal 的預設貼上是 Ctrl+V
-                Program.Log("  paste via Ctrl+V (Windows Terminal)");
+            case PasteChannel.CtrlV:
+                SendPasteKeys(shift: false);
                 break;
 
             default:
                 // 一般的 Edit 控制項（記事本那類）收 WM_PASTE，而且比送鍵可靠：
                 // 不受焦點、修飾鍵狀態與按鍵綁定影響。
                 SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
-                Program.Log("  paste via WM_PASTE");
                 break;
         }
     }
@@ -166,19 +172,70 @@ public sealed class TrayApplication : ApplicationContext
         const byte vkControl = 0x11;
         const byte vkShift = 0x10;
         const byte vkV = 0x56;
-        const uint keyUp = 0x0002;
 
         // 先釋放實體 Alt：熱鍵是 Alt+V，RegisterHotKey 不會幫忙放開，
         // 而卡住的 Alt 會把接下來的 Ctrl+V 變成選單快捷鍵。
-        keybd_event(vkMenu, 0, keyUp, UIntPtr.Zero);
+        List<NativeInput> inputs = new() { Key(vkMenu, up: true), Key(vkControl) };
+        if (shift) inputs.Add(Key(vkShift));
+        inputs.Add(Key(vkV));
+        inputs.Add(Key(vkV, up: true));
+        if (shift) inputs.Add(Key(vkShift, up: true));
+        inputs.Add(Key(vkControl, up: true));
 
-        keybd_event(vkControl, 0, 0, UIntPtr.Zero);
-        if (shift) keybd_event(vkShift, 0, 0, UIntPtr.Zero);
-        keybd_event(vkV, 0, 0, UIntPtr.Zero);
-        keybd_event(vkV, 0, keyUp, UIntPtr.Zero);
-        if (shift) keybd_event(vkShift, 0, keyUp, UIntPtr.Zero);
-        keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
+        SendInput(
+            (uint)inputs.Count,
+            inputs.ToArray(),
+            System.Runtime.InteropServices.Marshal.SizeOf<NativeInput>());
     }
+
+    private const uint InputKeyboard = 1;
+    private const uint KeyeventfKeyUp = 0x0002;
+
+    private static NativeInput Key(ushort vk, bool up = false) => new()
+    {
+        Type = InputKeyboard,
+        U = new InputUnion { Ki = new KeybdInput { Vk = vk, Flags = up ? KeyeventfKeyUp : 0 } },
+    };
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct KeybdInput
+    {
+        public ushort Vk;
+        public ushort Scan;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    // MOUSEINPUT 比 KEYBDINPUT 大，union 必須靠它撐出 INPUT 的真實大小；
+    // cbSize 不足時 SendInput 會整批拒收。
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MouseInput
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [System.Runtime.InteropServices.FieldOffset(0)] public KeybdInput Ki;
+        [System.Runtime.InteropServices.FieldOffset(0)] public MouseInput Mi;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct NativeInput
+    {
+        public uint Type;
+        public InputUnion U;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint inputCount, NativeInput[] inputs, int inputSize);
 
     private const uint WM_PASTE = 0x0302;
 
@@ -189,7 +246,7 @@ public sealed class TrayApplication : ApplicationContext
     private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    private static extern uint GetClipboardSequenceNumber();
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
     private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
@@ -246,6 +303,7 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         Clipboard.SetText(cleaned);
+        _ownWriteGate.MarkOwnWrite(GetClipboardSequenceNumber());
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
