@@ -11,6 +11,7 @@ public sealed class TrayApplication : ApplicationContext
     private readonly Settings _settings;
     private readonly ToolStripMenuItem _autoMonitorItem;
     private readonly ToolStripMenuItem _hotkeyItem;
+    private readonly OwnWriteGate _ownWriteGate = new();
 
     public TrayApplication()
     {
@@ -87,6 +88,11 @@ public sealed class TrayApplication : ApplicationContext
             _clipDebounce.Tick += (_, _) =>
             {
                 _clipDebounce.Stop();
+                if (_ownWriteGate.IsOwnWrite(GetClipboardSequenceNumber()))
+                {
+                    Trace("  clipboard sequence is our own write-back, monitor skips");
+                    return;
+                }
                 CleanClipboard(showNotification: false);
             };
         }
@@ -189,6 +195,9 @@ public sealed class TrayApplication : ApplicationContext
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
     private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
@@ -244,6 +253,7 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         Clipboard.SetText(cleaned);
+        _ownWriteGate.MarkOwnWrite(GetClipboardSequenceNumber());
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
