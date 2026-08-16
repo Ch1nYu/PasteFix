@@ -12,6 +12,8 @@ node_modules/
 
 # 其他工具的暫存
 .freebuff/
+.mimosa/
+.zcode/
 
 # tools/make-icon.ps1 -Preview 的產物
 icon-preview-*.png
