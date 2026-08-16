@@ -107,7 +107,7 @@ public sealed class TrayApplication : ApplicationContext
         if (hasText)
         {
             string raw = Clipboard.GetText();
-            Program.Log($"  clipboard text=[{Shorten(raw)}]");
+            Program.Log($"  clipboard {ClipboardSummary.Describe(raw)}");
             changed = CleanClipboard(showNotification: false, force: true);
             Program.Log($"  CleanClipboard changed={changed}");
         }
@@ -119,8 +119,6 @@ public sealed class TrayApplication : ApplicationContext
         string message = !hasText ? "剪貼簿中沒有文字" : changed ? "已清洗並貼上" : "內容已乾淨，已貼上";
         _icon.ShowBalloonTip(1200, "Pastefix", message, ToolTipIcon.Info);
     }
-
-    private static string Shorten(string s) => s.Length > 100 ? s.Substring(0, 100) + "…" : s;
 
     private static string GetClassName(IntPtr hwnd) { try { var sb = new System.Text.StringBuilder(256); GetClassName(hwnd, sb, sb.Capacity); return sb.ToString(); } catch { return "?"; } }
 
