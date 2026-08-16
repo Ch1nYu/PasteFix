@@ -125,21 +125,38 @@ Settings live in `%APPDATA%\PasteFix\settings.json` and apply immediately.
 ### How the hotkey delivers the paste
 
 Alt+V cleans the clipboard and then has to make the foreground window paste it.
-How, depends on what that window is — measured 2026-08-09, both times because
-the clipboard came out clean and nothing was pasted:
+How, depends on what that window is:
 
 | Window class | Paste sent as |
 |---|---|
 | `org.wezfurlong.wezterm` | Ctrl+Shift+V keystrokes |
 | `CASCADIA_HOSTING_WINDOW_CLASS` (Windows Terminal) | Ctrl+V keystrokes |
-| anything else | `WM_PASTE` |
+| anything else | Ctrl+Shift+V keystrokes — the default channel |
 
-Both terminals host their input in a child surface, so a `WM_PASTE` posted to
-the top-level window is silently dropped. Ordinary Edit controls do handle it,
-and there it is the better channel — immune to focus, stuck modifier keys and
-custom key bindings. Every Alt+V press logs which branch it took to
+The two terminal rows are measured facts (2026-08-09, both times because the
+clipboard came out clean and nothing was pasted): both terminals host their
+input in a child surface, so a `WM_PASTE` posted to the top-level window is
+silently dropped. Ordinary Edit controls do handle `WM_PASTE`, and there it is
+the better channel — immune to focus, stuck modifier keys and custom key
+bindings.
+
+**The table lives in `settings.json`** — a `PasteChannels` map, written out in
+full on first run so it can be edited directly. An unknown GPU terminal that
+ignores `WM_PASTE` therefore no longer needs a code change: add a row for its
+window class, or change the `"*"` entry that stands for every unlisted window.
+The default for unlisted windows became Ctrl+Shift+V on 2026-08-16 — it is the
+terminal-family paste convention, and a keystroke that does nothing is a
+*visible* failure, unlike `WM_PASTE`, which such windows drop silently after
+the clean already succeeded. That default is policy, not a measurement; if you
+spend your Alt+V presses in plain Edit controls, point `"*"` back at
+`"WmPaste"`.
+
+Every Alt+V press logs which channel it took to
 `%APPDATA%\PasteFix\pastefix.log`; if a terminal ever cleans but does not paste,
-that log line is the first thing to read.
+that log line is the first thing to read. The log records the clipboard's
+length, never its contents — passwords get copied too, and a permanent
+plaintext log is the wrong place for them. (The opt-in `PASTEFIX_TRACE` file is
+exempt: it exists precisely to show content while debugging.)
 
 ## Supported environment
 
@@ -234,6 +251,10 @@ does not update it, and the tray app must be closed before republishing.
 - `PasteFix/dotnet/src/PasteFix` — the WinForms tray app
   - `Normalizer.cs` — `Dedent` and `Normalize`, pure and unit-tested
   - `MessageWindow.cs` — hidden window for clipboard + hotkey messages
+  - `TrayApplication.cs` — tray menu, hotkey flow, paste delivery
+  - `PasteChannelSelector.cs` — window class → paste mechanism, overridable from settings
+  - `OwnWriteGate.cs` — tells our own clipboard write-backs apart from user copies
+  - `ClipboardSummary.cs` — content-free clipboard description for the log
   - `Settings.cs` — persistent settings
 - `PasteFix/dotnet/tests/PasteFix.Tests` — xUnit tests
 - `PasteFix/examples` — paired input/expected samples used as test fixtures
