@@ -213,7 +213,7 @@ public static partial class Normalizer
             }
 
             string segment = ConsumedMarker().Replace(line, "").TrimEnd();
-            current = current.Length == 0 ? segment : $"{current} {segment.TrimStart()}";
+            current = current.Length == 0 ? segment : current + " " + segment.TrimStart();
 
             if (!continues)
             {
@@ -277,7 +277,7 @@ public static partial class Normalizer
             // way there is nothing to join here.
             string trimmed = line.TrimEnd();
             if (trimmed.EndsWith("@\"", StringComparison.Ordinal)) { s.HereEnd = "\"@"; s.Quote = '\0'; }
-            else if (trimmed.EndsWith("@'", StringComparison.Ordinal)) { s.HereEnd = "'@"; s.Quote = '\0'; }
+            else if (trimmed.EndsWith("@\'", StringComparison.Ordinal)) { s.HereEnd = "'@"; s.Quote = '\0'; }
             return false;
         }
 
@@ -290,4 +290,28 @@ public static partial class Normalizer
 
         return s.Depth == 0 && ContinuationMarker().IsMatch(line);
     }
+
+    /// <summary>
+    /// Wraps a multi-line script into a dot-sourced PowerShell script block (<c>. { ... }</c>)
+    /// so that PowerShell treats it as a single compound statement rather than executing
+    /// line-by-line upon each newline. Single-line commands and already-enclosed blocks
+    /// are returned untouched.
+    /// </summary>
+    public static string WrapScriptBlock(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return input;
+
+        (List<string> lines, string eol) = SplitLines(input);
+        if (lines.Count <= 1) return input;
+
+        string trimmedFirst = lines[0].Trim();
+        string trimmedLast = lines[^1].Trim();
+
+        if ((trimmedFirst is "{" or ". {" or "& {") && trimmedLast == "}")
+            return string.Join(eol, lines);
+
+        var indented = lines.Select(l => string.IsNullOrWhiteSpace(l) ? l : "    " + l);
+        return ". {" + eol + string.Join(eol, indented) + eol + "}";
+    }
 }
+
