@@ -17,8 +17,6 @@ public sealed class TrayApplication : ApplicationContext
     {
         _settings = Settings.Load();
 
-        // CheckOnClick 不是裝飾：少了它，點擊不會翻動 Checked，於是 OnXxxToggle
-        // 讀到的永遠是舊值、把同一個值寫回設定，兩個開關就都關不掉（實測 2026-08-10）。
         _autoMonitorItem = new ToolStripMenuItem("全自動監聽", null, OnAutoMonitorToggle)
         {
             CheckOnClick = true,
@@ -31,7 +29,7 @@ public sealed class TrayApplication : ApplicationContext
         };
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard(force: true)));
+        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard(force: true, wrapPowerShell: true)));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
         menu.Items.Add(_hotkeyItem);
@@ -45,7 +43,7 @@ public sealed class TrayApplication : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
-        _icon.DoubleClick += (_, _) => CleanClipboard(force: true);
+        _icon.DoubleClick += (_, _) => CleanClipboard(force: true, wrapPowerShell: true);
 
         _window.ClipboardChanged += OnClipboardChanged;
         _window.HotkeyPressed += OnHotkeyPressed;
@@ -53,9 +51,6 @@ public sealed class TrayApplication : ApplicationContext
         ApplySettings();
     }
 
-    /// The .ico carries 16..256px frames; asking for SmallIconSize picks the one
-    /// drawn for the tray instead of letting Windows downscale a large frame into
-    /// mush. Falls back to the system icon rather than failing to start.
     private static Icon LoadTrayIcon()
     {
         try
@@ -101,12 +96,22 @@ public sealed class TrayApplication : ApplicationContext
         _clipDebounce.Start();
     }
 
+    private static bool IsTerminalWindow(string className)
+    {
+        return className is "org.wezfurlong.wezterm"
+            or "CASCADIA_HOSTING_WINDOW_CLASS"
+            or "ConsoleWindowClass"
+            or "mintty"
+            or "VirtualConsoleClass";
+    }
+
     private void OnHotkeyPressed()
     {
-        Program.Log($"HotkeyPressed fired");
+        Program.Log("HotkeyPressed fired");
         IntPtr fgBoundary = GetForegroundWindow();
+        string className = GetClassName(fgBoundary);
         Program.Log(
-            $"  foreground hwnd=0x{fgBoundary.ToInt64():X} class=[{GetClassName(fgBoundary)}] title=[{GetWindowTitle(fgBoundary)}]");
+            $"  foreground hwnd=0x{fgBoundary.ToInt64():X} class=[{className}] title=[{GetWindowTitle(fgBoundary)}]");
         bool hasText = Clipboard.ContainsText();
         Program.Log($"  clipboard hasText={hasText}");
         bool changed = false;
@@ -114,7 +119,8 @@ public sealed class TrayApplication : ApplicationContext
         {
             string raw = Clipboard.GetText();
             Program.Log($"  clipboard {ClipboardSummary.Describe(raw)}");
-            changed = CleanClipboard(showNotification: false, force: true);
+            bool isTerminal = IsTerminalWindow(className);
+            changed = CleanClipboard(showNotification: false, force: true, wrapPowerShell: isTerminal);
             Program.Log($"  CleanClipboard changed={changed}");
         }
         else
@@ -139,9 +145,6 @@ public sealed class TrayApplication : ApplicationContext
         }
         string className = GetClassName(hwnd);
 
-        // 現代終端機把輸入放在子表面（WezTerm 的 GL 視窗、Windows Terminal 的 XAML
-        // island），送到頂層 HWND 的 WM_PASTE 會被靜默丟掉——2026-08-09 實測：剪貼
-        // 簿清洗成功、貼上沒發生。通道表與理由見 PasteChannelSelector。
         var channel = PasteChannelSelector.Select(className, _settings.PasteChannels);
         bool mapped = PasteChannelSelector.IsMapped(className, _settings.PasteChannels);
         Program.Log(mapped
@@ -159,8 +162,6 @@ public sealed class TrayApplication : ApplicationContext
                 break;
 
             default:
-                // 一般的 Edit 控制項（記事本那類）收 WM_PASTE，而且比送鍵可靠：
-                // 不受焦點、修飾鍵狀態與按鍵綁定影響。
                 SendMessage(hwnd, WM_PASTE, IntPtr.Zero, IntPtr.Zero);
                 break;
         }
@@ -173,8 +174,6 @@ public sealed class TrayApplication : ApplicationContext
         const byte vkShift = 0x10;
         const byte vkV = 0x56;
 
-        // 先釋放實體 Alt：熱鍵是 Alt+V，RegisterHotKey 不會幫忙放開，
-        // 而卡住的 Alt 會把接下來的 Ctrl+V 變成選單快捷鍵。
         List<NativeInput> inputs = new() { Key(vkMenu, up: true), Key(vkControl) };
         if (shift) inputs.Add(Key(vkShift));
         inputs.Add(Key(vkV));
@@ -207,8 +206,6 @@ public sealed class TrayApplication : ApplicationContext
         public IntPtr ExtraInfo;
     }
 
-    // MOUSEINPUT 比 KEYBDINPUT 大，union 必須靠它撐出 INPUT 的真實大小；
-    // cbSize 不足時 SendInput 會整批拒收。
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct MouseInput
     {
@@ -276,13 +273,7 @@ public sealed class TrayApplication : ApplicationContext
         Program.Log($"HotkeyEnabled -> {_settings.HotkeyEnabled} (saved to {Settings.FilePath})");
     }
 
-    /// <param name="force">
-    /// True for the paths the user triggers on purpose (Alt+V, the tray menu,
-    /// double-click): those may also join continuation lines, which rewrites the
-    /// text. AutoMonitor passes false and only dedents, which preserves structure
-    /// — so it needs no guess about whether the clipboard "looks like a command".
-    /// </param>
-    private bool CleanClipboard(bool showNotification = true, bool force = false)
+    private bool CleanClipboard(bool showNotification = true, bool force = false, bool wrapPowerShell = false)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
@@ -294,6 +285,10 @@ public sealed class TrayApplication : ApplicationContext
 
         string text = Clipboard.GetText();
         string cleaned = force ? Normalizer.Normalize(text) : Normalizer.Dedent(text);
+        if (wrapPowerShell)
+        {
+            cleaned = Normalizer.WrapScriptBlock(cleaned);
+        }
         Trace($"  cleaned=[{cleaned}]");
         if (cleaned == text)
         {
@@ -336,3 +331,4 @@ public sealed class TrayApplication : ApplicationContext
         base.ExitThreadCore();
     }
 }
+
