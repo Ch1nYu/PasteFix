@@ -9,6 +9,7 @@ namespace PasteFix;
 /// </summary>
 public sealed class MessageWindow : NativeWindow
 {
+    public const int WmTerminalCtrlV = 0x0400 + 101; // WM_USER + 101
     private const int WmClipboardUpdate = 0x031D;
     private const int WmHotkey = 0x0312;
     private const int HotkeyId = 1;
@@ -29,6 +30,7 @@ public sealed class MessageWindow : NativeWindow
 
     public event Action? ClipboardChanged;
     public event Action? HotkeyPressed;
+    public event Action? TerminalCtrlVPressed;
 
     private bool _clipboardListening;
     private bool _hotkeyListening;
@@ -52,8 +54,6 @@ public sealed class MessageWindow : NativeWindow
         if (enabled == _hotkeyListening) return;
         _hotkeyListening = enabled;
 
-        // RegisterHotKey fails when another process already owns Alt+V. Silence
-        // there would look exactly like the toggle not working.
         bool ok = enabled
             ? RegisterHotKey(Handle, HotkeyId, ModAlt | ModNoRepeat, (uint)Keys.V)
             : UnregisterHotKey(Handle, HotkeyId);
@@ -70,6 +70,10 @@ public sealed class MessageWindow : NativeWindow
         {
             HotkeyPressed?.Invoke();
         }
+        else if (m.Msg == WmTerminalCtrlV)
+        {
+            TerminalCtrlVPressed?.Invoke();
+        }
 
         base.WndProc(ref m);
     }
@@ -81,3 +85,4 @@ public sealed class MessageWindow : NativeWindow
         base.DestroyHandle();
     }
 }
+

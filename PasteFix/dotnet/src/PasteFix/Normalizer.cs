@@ -49,22 +49,7 @@ public static partial class Normalizer
         return string.Join(eol, JoinContinuations(lines));
     }
 
-    private static bool FirstLineMissedTheMargin(List<string> lines)
-    {
-        if (lines.Count < 2) return false;
-        if (IndentLength(lines[0]) != 0) return false;
-
-        var scan = new ScanState();
-        if (ScanLine(lines[0], scan)) return false;
-        if (scan.Depth != 0 || scan.Quote != '\0' || scan.HereEnd is not null) return false;
-
-        char last = lines[0].TrimEnd() is { Length: > 0 } t ? t[^1] : '\0';
-        if (last is ':' or '：') return false;
-
-        return CommonIndent(lines, from: 1).Length > 0;
-    }
-
-    private static (List<string> Lines, string Eol) SplitLines(string input)
+    public static (List<string> Lines, string Eol) SplitLines(string input)
     {
         string eol = "\n";
         int lf = input.IndexOf('\n');
@@ -81,6 +66,21 @@ public static partial class Normalizer
         return first > last
             ? ([], eol)
             : (raw[first..(last + 1)].ToList(), eol);
+    }
+
+    private static bool FirstLineMissedTheMargin(List<string> lines)
+    {
+        if (lines.Count < 2) return false;
+        if (IndentLength(lines[0]) != 0) return false;
+
+        var scan = new ScanState();
+        if (ScanLine(lines[0], scan)) return false;
+        if (scan.Depth != 0 || scan.Quote != '\0' || scan.HereEnd is not null) return false;
+
+        char last = lines[0].TrimEnd() is { Length: > 0 } t ? t[^1] : '\0';
+        if (last is ':' or '：') return false;
+
+        return CommonIndent(lines, from: 1).Length > 0;
     }
 
     private static void StripCommonIndent(List<string> lines, int from = 0)
@@ -213,34 +213,6 @@ public static partial class Normalizer
         }
 
         return s.Depth == 0 && ContinuationMarker().IsMatch(line);
-    }
-
-    /// <summary>
-    /// Wraps a multi-line script into a dot-sourced PowerShell script block (<c>. { ... }</c>)
-    /// so that PowerShell treats it as a single compound statement rather than executing
-    /// line-by-line upon each newline. Single-line commands, colons, or already-enclosed blocks
-    /// are returned untouched.
-    /// </summary>
-    public static string WrapScriptBlock(string input)
-    {
-        if (string.IsNullOrWhiteSpace(input)) return input;
-
-        (List<string> lines, string eol) = SplitLines(input);
-        if (lines.Count <= 1) return input;
-
-        string trimmedFirst = lines[0].Trim();
-        string trimmedLast = lines[lines.Count - 1].Trim();
-
-        // If already enclosed in braces (. { ... }, & { ... }, or { ... }), do not double wrap
-        if ((trimmedFirst is "{" or ". {" or "& {") && trimmedLast == "}")
-            return string.Join(eol, lines);
-
-        // Do not wrap if line 1 ends with a colon (Python / YAML block)
-        char last = trimmedFirst.Length > 0 ? trimmedFirst[trimmedFirst.Length - 1] : '\0';
-        if (last is ':' or '：') return string.Join(eol, lines);
-
-        var indented = lines.Select(l => string.IsNullOrWhiteSpace(l) ? l : "    " + l);
-        return ". {" + eol + string.Join(eol, indented) + eol + "}";
     }
 }
 

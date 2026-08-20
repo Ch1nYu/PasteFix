@@ -8,6 +8,8 @@ public sealed class Settings
 {
     public bool AutoMonitor { get; set; } = true;
     public bool HotkeyEnabled { get; set; } = true;
+    public bool InterceptTerminalCtrlV { get; set; } = true;
+    public int LineDelayMs { get; set; } = 25;
 
     public Dictionary<string, PasteChannel>? PasteChannels { get; set; }
 
@@ -33,13 +35,11 @@ public sealed class Settings
         }
         catch
         {
-            // 損毀的設定檔就從預設值重來
             settings = new Settings();
         }
 
         if (settings.PasteChannels is null)
         {
-            // 1.0.x 的設定檔沒有這個欄位：補上完整預設表寫回，使用者才看得到、改得動。
             settings.PasteChannels = new Dictionary<string, PasteChannel>(PasteChannelSelector.DefaultMap);
             settings.Save();
         }
@@ -56,7 +56,7 @@ public sealed class Settings
         }
         catch
         {
-            // 儲存失敗不應令 tray 崩潰
         }
     }
 }
+
