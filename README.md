@@ -1,61 +1,35 @@
 # Pastefix
 
-**Makes a multi-line command copied from a chat window pasteable into a terminal in one go.**
+**Zero-friction clipboard optimizer for pasting terminal commands on Windows.**
 
-A small Windows tray application that automatically optimizes your clipboard in the background for terminal pasting.
+Pastefix is a lightweight Windows background tray app. It automatically cleans and optimizes commands copied from AI chat windows (ChatGPT, Claude) or web pages so that pressing **`Ctrl+V`** or right-clicking in your terminal pastes clean, runnable commands in one go.
 
-## What it does
+---
 
-When copying code from AI chat windows (ChatGPT, Claude) or web pages, terminal pasting often breaks due to indentation and shell syntax mismatches. Pastefix automatically fixes these issues:
+## What It Fixes
 
-1. **Removes Common Indentation (Dedent)** — Strips uniform outer indentation while strictly preserving relative indentation so Python, YAML, and here-strings survive intact.
-2. **Repairs Missed Margins** — Automatically corrects mouse selections that missed the first-line left margin.
-3. **Joins Continuation Lines** — Glues multi-line continuation markers (`\`, backtick, `&&`, or trailing `|`) into single executable commands.
-4. **Drops Stray Empty Lines in Pipelines** — Prevents PowerShell `EmptyPipeElement` parser errors.
+- **Cross-Shell Continuations:** Automatically joins lines ending in `\`, backtick, `&&`, or `|` into single executable commands.
+- **Broken Command Lines:** Reconnects split lines when flags (like `--flag` or `-m`) or operators (`|`) wrap to the next line.
+- **Common Indentation (Dedent):** Strips outer margins while preserving internal relative indents for Python, YAML, and here-strings.
+- **Empty Pipeline Errors:** Drops empty lines between pipes to prevent PowerShell `EmptyPipeElement` parser errors.
 
-## How it works
+---
 
-Pastefix operates entirely on clipboard events with zero extra keystrokes required:
+## How It Works
 
-| Feature | Behavior | Default |
-|---|---|---|
-| **全自動監聽** (Auto monitor) | Automatically normalizes clipboard content within 300ms on copy | Enabled |
-| **立即清洗** (Clean now) | Manually cleans clipboard and displays notification | On demand |
+1. **Copy as Usual:** When you copy any text (`Ctrl+C`), Pastefix automatically optimizes the clipboard in the background within 300ms.
+2. **Paste Directly:** Switch to your terminal (WezTerm, Windows Terminal, PowerShell, etc.) and simply press **`Ctrl+V`** or right-click to paste.
+3. **No New Hotkeys:** Operates entirely through standard clipboard events — no global hotkey conflicts and no keyboard interception.
 
-**No new hotkeys to learn**: Simply press `Ctrl+V` or mouse right-click to paste into WezTerm, Windows Terminal, or any terminal emulator as usual.
+---
 
-## Getting Started
+## Download & Usage
 
-### Download & Run
-Download the latest `PasteFix.exe` from the [Releases](https://github.com/Ch1nYu/pastefix/releases) page. It sits in your Windows system tray notification area (look under the `^` hidden icons menu).
+1. Download the latest **`PasteFix.exe`** from [Releases](https://github.com/Ch1nYu/pastefix/releases).
+2. Run `PasteFix.exe`. It sits quietly in the Windows system tray notification area (under the `^` hidden icons menu).
+3. *(Optional)* To launch on Windows startup, place a shortcut to `PasteFix.exe` in your `shell:startup` folder.
 
-- **Self-contained**: .NET 10 runtime is bundled inside the executable (~51 MB single file).
-- **Single-instance**: Protected by a system mutex to prevent accidental multiple instances.
-- **Config & Logs**: Settings persist in `%APPDATA%\PasteFix\settings.json`.
-
-## Build from Source
-
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
-
-```sh
-# Build and run tests
-dotnet build PasteFix/dotnet/PasteFix.slnx -c Release -warnaserror
-dotnet test  PasteFix/dotnet/PasteFix.slnx -c Release
-
-# Publish single-file executable
-dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 \
-  --self-contained true -o PasteFix/dist -p:PublishSingleFile=true \
-  -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
-```
-
-## Repository Layout
-
-```
-PasteFix/dotnet/     the .NET 10 WinForms tray app and xUnit test suite
-PasteFix/dist/       published single-file binary (PasteFix.exe)
-PasteFix/examples/   test fixtures (input/expected pairs)
-tools/               PowerShell test, benchmark, and measurement scripts
-docs/release-notes/  version release notes (v1.0.0, v1.1.0, v1.2.0)
-docs/records/        historical architecture records
-```
+- **Standalone Executable:** Single self-contained binary with embedded runtime (~51 MB, no installation needed).
+- **Single-Instance:** Automatically prevents multiple background instances.
+- **Config & Logs:** Stored locally in `%APPDATA%\PasteFix`.
 
