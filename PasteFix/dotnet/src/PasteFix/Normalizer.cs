@@ -14,10 +14,9 @@ namespace PasteFix;
 /// because none of them had a real scenario behind it — see
 /// docs/records/PLAN-2026-08-09.md.
 ///
-/// Dedent is structure-preserving, so AutoMonitor may run it on any clipboard
-/// content. Normalize rewrites the text — it joins continuations and repairs a
-/// selection that missed the left margin — so it only runs when the user asks
-/// for it (Alt+V / the tray menu).
+/// Dedent is structure-preserving. Normalize removes common indent, repairs
+/// margins, and joins shell continuations, which AutoMonitor runs automatically
+/// on clipboard copy.
 /// </summary>
 public static partial class Normalizer
 {
