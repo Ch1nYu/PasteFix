@@ -22,7 +22,7 @@ the text and therefore waits to be asked.
 
 | Surface | Runs | Default |
 |---|---|---|
-| **全自動監聽** — clipboard listener | `Dedent`, on every clipboard change | on |
+| **全自動監聽** — clipboard listener | `Normalize`, on every clipboard change | on |
 | **Alt+V** — hotkey | `Normalize`, then sends the paste | on |
 | **立即清洗** — tray item, or double-click the icon | `Normalize`, no paste | — |
 

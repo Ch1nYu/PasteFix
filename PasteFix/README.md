@@ -55,7 +55,7 @@ dropped — that is what turns `Get-Process |` into
 
 | Trigger | Dedent | Join continuations |
 |---|:-:|:-:|
-| **全自動監聽** (auto monitor, on by default) | ✅ | — |
+| **全自動監聽** (auto monitor, on by default) | ✅ | ✅ |
 | **Alt+V** / **立即清洗** / tray double-click | ✅ | ✅ |
 
 Dedenting preserves structure, so the automatic path can run it on anything —
