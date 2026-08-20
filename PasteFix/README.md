@@ -2,21 +2,27 @@
 
 **Makes a multi-line command copied from a chat window pasteable into a terminal in one go.**
 
-A small Windows tray app. It does two things and nothing else.
+A small Windows tray application. It operates as a background clipboard optimizer to ensure commands copied from AI chat interfaces paste cleanly and execute reliably in terminal environments.
 
-> **This file is the documentation of record.** It describes how the program behaves now. The dated files in `docs/records/` describe how it got here and are deliberately not kept up to date.
+> **Documentation of Record:** This document describes current behavior (v1.2.0). Historical records and design rationales live under `docs/records/`.
 
-## The problem
+---
 
-You ask Claude or ChatGPT for a shell script, hit *copy*, paste it into your terminal — and it doesn't run. Two things go wrong:
+## The Problems
 
-**The block carries the indentation of wherever it was quoted from.** Selecting a fenced block by hand takes the fence's leading whitespace with it, and the shell sees a command that starts four columns in.
+When copying scripts from Claude or ChatGPT into a Windows terminal (WezTerm, Windows Terminal, PowerShell), several common issues occur:
 
-**Continuation lines use the wrong marker.** Bash continues a line with a trailing `\`; PowerShell uses a trailing backtick. A command written for one shell breaks in the other, and the first line runs on its own with the remaining arguments lost.
+1. **Unwanted Common Indentation:** Selecting code quoted in Markdown lists includes leading whitespace, causing the terminal shell to see commands starting columns in.
+2. **Cross-Shell Continuation Breakage:** Bash uses trailing `\` while PowerShell uses a trailing backtick (`` ` ``). Pasting a Bash command into PowerShell breaks the arguments across lines and fails.
+3. **Broken Pipelines from Blank Lines:** Copying multi-line pipelines with blank lines (`Get-Process | \n\n Select-Object`) causes PowerShell to fail with `An empty pipe element is not allowed`.
+4. **Mouse Selection Margin Asymmetry:** Drag-selecting text from a terminal UI often catches the margin on lines 2..n while line 1 starts at column 0, leaving an asymmetric indent that ordinary dedent tools cannot fix.
 
-## What it does
+---
 
-**1. Removes the indent common to every line.** Relative indentation is untouched, so Python, YAML and here-strings survive intact.
+## What It Does
+
+### 1. Strips Outer Indentation (Dedent)
+Removes common leading whitespace while preserving relative indentation inside Python blocks, YAML scalars, and here-strings.
 
 ```
     if (x) {                 if (x) {
@@ -24,7 +30,8 @@ You ask Claude or ChatGPT for a shell script, hit *copy*, paste it into your ter
     }                        }
 ```
 
-**2. Joins continuation lines into one command.** A trailing `\`, backtick, `&&` or `|` is consumed and the lines are glued together.
+### 2. Joins Continuation Lines
+Glues continuation markers (`\`, backtick, `&&`, or trailing `|`) into single commands:
 
 ```
 docker run \
@@ -32,67 +39,61 @@ docker run \
     image
 ```
 
-This is the part that makes the tool shell-agnostic: **once the continuation markers are gone there is no continuation marker to get wrong**, so Pastefix never has to know which shell you are pasting into.
+Once continuation markers are consumed, **the command becomes shell-agnostic** — there is no continuation syntax left to get wrong.
 
-Blank lines caught between a continuation marker and the rest of the command are dropped — that is what turns `Get-Process |` into `An empty pipe element is not allowed.`
+### 3. Repairs Missed Left Margins
+When line 1 has no indent and is a complete syntactic statement, while lines 2..n share extra spaces, Pastefix removes the stray margin automatically.
 
-### When it runs
+### 4. Cleans Empty Lines in Continuations
+Blank lines caught after a continuation marker or pipe are dropped, preventing pipeline termination errors.
 
-| Trigger | Dedent | Join continuations |
-|---|:-:|:-:|
-| **全自動監聽** (auto monitor, on by default) | ✅ | ✅ |
-| **立即清洗** / tray double-click | ✅ | ✅ |
+---
 
-Because auto monitor fixes the clipboard at *copy* time in the background, an ordinary `Ctrl+V` or right-click in your terminal already gets the benefit with zero extra keystrokes required.
+## How It Operates
 
-## What it does **not** do
+| Trigger | Action | Details |
+|---|---|---|
+| **全自動監聽** (*Auto monitor*, default on) | Normalize on copy | Operates in background within 300ms of any clipboard copy |
+| **立即清洗** (*Clean now*, tray icon) | Manual normalize | Triggered from tray menu or icon double-click |
 
-- **No shell translation.** `$VAR` expansion, `$(...)` subshells, `&&` semantics, `/` versus `\` path separators — all out of scope.
-- **No line-ending rewriting.** Line endings are preserved as-is.
-- **No prompt stripping** (`$ `, `> `, `PS C:\>`), **no comment deletion**, **no markdown fence removal.**
+Because AutoMonitor normalizes the clipboard immediately at **copy time**, you simply use standard **`Ctrl+V`** or mouse right-click to paste into WezTerm, Windows Terminal, or any application. No custom hotkeys or keyboard interception hooks are required.
 
-Guards exist so that joining never fires on code: a trailing `&&` or `\` inside an unclosed bracket (`if (a &&`, `do { \`), inside a quoted string, or inside a here-string is left alone, and a marker must have whitespace in front of it so `cd C:\temp\` stays a path.
+---
 
-## Usage
+## Safety Guards (What It Deliberately Does NOT Touch)
 
-Run `PasteFix\dist\PasteFix.exe`. It sits in the system tray:
+- **No Shell Translation:** `$VAR`, `$(...)`, path separators (`/` vs `\`) remain untouched.
+- **Bracket Depth & Quote Protection:** Markers inside unclosed parentheses (`if (a &&`), braces (`do { \`), single/double quotes, or here-strings are never merged.
+- **Windows Path Protection:** A trailing backslash attached to a path token (e.g. `cd C:\temp\`) is guarded and never treated as a continuation.
+- **No Prompt Stripping / No Comment Stripping:** Comments (`#`) and markdown blocks are preserved.
 
-- **立即清洗** (*Clean now*) — cleans the clipboard and shows a notification.
-- **全自動監聽** (*Auto monitor*, default on) — cleans the clipboard whenever it changes.
-- **退出** — quit.
+---
 
-Settings live in `%APPDATA%\PasteFix\settings.json`.
+## Terminal Setup & Troubleshooting
 
-## Build from source
+### Reverse-Order Paste in PowerShell
+If pasting multi-line text into PowerShell outputs lines in reverse order (bottom to top), verify your terminal's newline configuration:
+
+- In **WezTerm**, avoid setting `canonicalize_pasted_newlines = "LineFeed"` on Windows.
+- Windows ConPTY and PSReadLine require standard Windows line endings (`CRLF` or `CR`). Forcing raw `\n` into ConPTY causes PSReadLine's asynchronous input parser to reorder incoming stream chunks.
+- Leaving `canonicalize_pasted_newlines` disabled preserves correct, sequential multi-line pasting.
+
+---
+
+## Build and Run
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```sh
-dotnet build PasteFix/dotnet/PasteFix.slnx      # build
-dotnet test PasteFix/dotnet/PasteFix.slnx       # run unit tests
+# Build and run tests (65 unit tests)
+dotnet build PasteFix/dotnet/PasteFix.slnx -c Release
+dotnet test  PasteFix/dotnet/PasteFix.slnx -c Release
+
+# Publish single-file binary
+dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 \
+  --self-contained true -o PasteFix/dist -p:PublishSingleFile=true \
+  -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
 ```
 
-Ship as a self-contained single exe:
-
-```sh
-dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 --self-contained true -o PasteFix/dist -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
-```
-
-## Layout
-
-- `PasteFix/dotnet/src/PasteFix` — the WinForms tray app
-  - `Normalizer.cs` — `Dedent` and `Normalize`, pure and unit-tested
-  - `MessageWindow.cs` — hidden window for clipboard change listener
-  - `TrayApplication.cs` — tray icon and menu
-  - `OwnWriteGate.cs` — tells our own clipboard write-backs apart from user copies
-  - `ClipboardSummary.cs` — content-free clipboard description for the log
-  - `Settings.cs` — persistent settings
-- `PasteFix/dotnet/tests/PasteFix.Tests` — xUnit tests
-- `PasteFix/examples` — paired input/expected samples used as test fixtures
-- `PasteFix/legacy` — the old Node.js CLI, kept for reference
-- `tools/paste-probe.ps1` — measures what a terminal actually receives on paste
-- `tools/manual-test.ps1` — end-to-end smoke test against a running tray app
-- `tools/manual-cases.ps1` — fifteen cases you paste by hand, with expected results
-- `tools/toggle-test.ps1` — regression test for the tray toggle
-- `docs/records/` — dated records of past work; history, not current behaviour
+Published binary: `PasteFix/dist/PasteFix.exe` (~51 MB single-file standalone executable).
 

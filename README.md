@@ -1,53 +1,61 @@
 # Pastefix
 
-**Makes a multi-line command copied from a chat window pasteable into a terminal in one go.** A small Windows tray app that does two things and nothing else:
+**Makes a multi-line command copied from a chat window pasteable into a terminal in one go.**
 
-1. **Removes the indent common to every line** — relative indentation is kept, so Python, YAML and here-strings survive. If the selection missed the left margin and line 1 came out flush while the rest did not, that margin is taken off too, on the strength of a grammatical rule rather than a guess.
-2. **Joins continuation lines** — a trailing `\`, backtick, `&&` or `|` is consumed and the lines are glued into one command.
+A small Windows tray application that automatically optimizes your clipboard in the background for terminal pasting.
 
-Everything the normalizer used to do beyond these two — line-ending rewriting, prompt stripping, comment filtering, markdown fence removal, guessing whether a block "looks like a command" — was removed on 2026-08-09. Each removal has a reason on record; see [`docs/records/PLAN-2026-08-09.md`](docs/records/PLAN-2026-08-09.md).
+## What it does
 
-## The whole feature set
+When copying code from AI chat windows (ChatGPT, Claude) or web pages, terminal pasting often breaks due to indentation and shell syntax mismatches. Pastefix automatically fixes these issues:
 
-| Surface | Runs | Default |
+1. **Removes Common Indentation (Dedent)** — Strips uniform outer indentation while strictly preserving relative indentation so Python, YAML, and here-strings survive intact.
+2. **Repairs Missed Margins** — Automatically corrects mouse selections that missed the first-line left margin.
+3. **Joins Continuation Lines** — Glues multi-line continuation markers (`\`, backtick, `&&`, or trailing `|`) into single executable commands.
+4. **Drops Stray Empty Lines in Pipelines** — Prevents PowerShell `EmptyPipeElement` parser errors.
+
+## How it works
+
+Pastefix operates entirely on clipboard events with zero extra keystrokes required:
+
+| Feature | Behavior | Default |
 |---|---|---|
-| **全自動監聽** — clipboard listener | `Normalize` (dedent + join continuations), on every clipboard change | on |
-| **立即清洗** — tray item, or double-click the icon | `Normalize`, manual clean | — |
+| **全自動監聽** (Auto monitor) | Automatically normalizes clipboard content within 300ms on copy | Enabled |
+| **立即清洗** (Clean now) | Manually cleans clipboard and displays notification | On demand |
 
-- Settings: `%APPDATA%\PasteFix\settings.json`
-- Log: `%APPDATA%\PasteFix\pastefix.log`
-- `PASTEFIX_TRACE=1` adds a verbose trace in `%TEMP%\pastefix-trace.log`.
+**No new hotkeys to learn**: Simply press `Ctrl+V` or mouse right-click to paste into WezTerm, Windows Terminal, or any terminal emulator as usual.
 
-## Start here
+## Getting Started
 
-| | |
-|---|---|
-| [`PasteFix/README.md`](PasteFix/README.md) | **The documentation of record.** The only file that describes current behaviour: what it does, what it deliberately does not, build instructions. |
-| `PasteFix/dist/PasteFix.exe` | The tray app. A *publish* artifact — `dotnet build` does not update it, and the running tray must be closed before republishing. |
-| `tools/manual-test.ps1` | Automated smoke test against the running tray app. |
-| `tools/manual-cases.ps1` | Hand-tested verification cases. |
-| `tools/toggle-test.ps1` | Regression test for the tray toggle. |
-| `tools/paste-probe.ps1` | Measures what a terminal actually hands the application. |
+### Download & Run
+Download the latest `PasteFix.exe` from the [Releases](https://github.com/Ch1nYu/pastefix/releases) page. It sits in your Windows system tray notification area (look under the `^` hidden icons menu).
 
-## Layout
+- **Self-contained**: .NET 10 runtime is bundled inside the executable (~51 MB single file).
+- **Single-instance**: Protected by a system mutex to prevent accidental multiple instances.
+- **Config & Logs**: Settings persist in `%APPDATA%\PasteFix\settings.json`.
 
-```
-PasteFix/dotnet/     the tray app (C#, .NET 10) and its unit tests
-PasteFix/legacy/     the original Node.js CLI and AutoHotkey script, kept for reference
-PasteFix/examples/   input/expected fixtures used by the tests
-tools/               PowerShell test and measurement scripts
-docs/records/        dated records of past work — history, not current behaviour
-```
-
-## Build and test
+## Build from Source
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```sh
+# Build and run tests
 dotnet build PasteFix/dotnet/PasteFix.slnx -c Release -warnaserror
 dotnet test  PasteFix/dotnet/PasteFix.slnx -c Release
+
+# Publish single-file executable
 dotnet publish PasteFix/dotnet/src/PasteFix/PasteFix.csproj -c Release -r win-x64 \
   --self-contained true -o PasteFix/dist -p:PublishSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+```
+
+## Repository Layout
+
+```
+PasteFix/dotnet/     the .NET 10 WinForms tray app and xUnit test suite
+PasteFix/dist/       published single-file binary (PasteFix.exe)
+PasteFix/examples/   test fixtures (input/expected pairs)
+tools/               PowerShell test, benchmark, and measurement scripts
+docs/release-notes/  version release notes (v1.0.0, v1.1.0, v1.2.0)
+docs/records/        historical architecture records
 ```
 
