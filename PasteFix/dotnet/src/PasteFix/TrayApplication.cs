@@ -29,7 +29,7 @@ public sealed class TrayApplication : ApplicationContext
         };
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard(force: true)));
+        menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
         menu.Items.Add(_hotkeyItem);
@@ -43,7 +43,7 @@ public sealed class TrayApplication : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
-        _icon.DoubleClick += (_, _) => CleanClipboard(force: true);
+        _icon.DoubleClick += (_, _) => CleanClipboard();
 
         _window.ClipboardChanged += OnClipboardChanged;
         _window.HotkeyPressed += OnHotkeyPressed;
@@ -110,7 +110,7 @@ public sealed class TrayApplication : ApplicationContext
         {
             string raw = Clipboard.GetText();
             Program.Log($"  clipboard {ClipboardSummary.Describe(raw)}");
-            changed = CleanClipboard(showNotification: false, force: true);
+            changed = CleanClipboard(showNotification: false);
             Program.Log($"  CleanClipboard changed={changed}");
         }
         else
@@ -263,7 +263,7 @@ public sealed class TrayApplication : ApplicationContext
         Program.Log($"HotkeyEnabled -> {_settings.HotkeyEnabled} (saved to {Settings.FilePath})");
     }
 
-    private bool CleanClipboard(bool showNotification = true, bool force = false)
+    private bool CleanClipboard(bool showNotification = true)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
@@ -274,7 +274,7 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        string cleaned = force ? Normalizer.Normalize(text) : Normalizer.Dedent(text);
+        string cleaned = Normalizer.Normalize(text);
         Trace($"  cleaned=[{cleaned}]");
         if (cleaned == text)
         {

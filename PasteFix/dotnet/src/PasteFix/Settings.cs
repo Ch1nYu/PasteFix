@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
@@ -8,8 +9,6 @@ public sealed class Settings
 {
     public bool AutoMonitor { get; set; } = true;
     public bool HotkeyEnabled { get; set; } = true;
-    public bool InterceptTerminalCtrlV { get; set; } = true;
-    public int LineDelayMs { get; set; } = 25;
 
     public Dictionary<string, PasteChannel>? PasteChannels { get; set; }
 
