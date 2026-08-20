@@ -1,0 +1,4 @@
+# Ignore legacy prototypes from GitHub language statistics
+PasteFix/legacy/** linguist-vendored
+tools/** linguist-vendored
+PasteFix/examples/** linguist-vendored
