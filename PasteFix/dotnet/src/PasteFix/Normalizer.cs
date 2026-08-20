@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace PasteFix;
@@ -8,11 +11,6 @@ namespace PasteFix;
 ///
 ///   <see cref="Dedent"/>   — remove the indent common to every line.
 ///   <see cref="Normalize"/> — dedent, then join continuation lines.
-///
-/// Nothing else. It does not strip prompts, delete comments, remove markdown
-/// fences, or rewrite line endings; those rules were removed on 2026-08-09
-/// because none of them had a real scenario behind it — see
-/// docs/records/PLAN-2026-08-09.md.
 ///
 /// Dedent is structure-preserving. Normalize removes common indent, repairs
 /// margins, and joins shell continuations, which AutoMonitor runs automatically
@@ -25,6 +23,9 @@ public static partial class Normalizer
 
     [GeneratedRegex(@"(?<=[ \t])[\\`][ \t]*$")]
     private static partial Regex ConsumedMarker();
+
+    [GeneratedRegex(@"^(?:--?[a-zA-Z]|&&|\|\|?)[ \t]*")]
+    private static partial Regex LeadingContinuation();
 
     [GeneratedRegex(@"<<-?\s*(?<q>['""]?)(?<tag>[A-Za-z_][A-Za-z0-9_]*)\k<q>")]
     private static partial Regex Heredoc();
@@ -130,11 +131,30 @@ public static partial class Normalizer
         var scan = new ScanState();
         string current = "";
 
-        foreach (string line in lines)
+        for (int i = 0; i < lines.Count; i++)
         {
+            string line = lines[i];
             if (current.Length > 0 && string.IsNullOrWhiteSpace(line)) continue;
 
-            bool continues = ScanLine(line, scan);
+            bool endsWithContinuation = ScanLine(line, scan);
+
+            // Check if NEXT line starts with a leading continuation (e.g. --flag, -f, | or &&)
+            bool nextStartsContinuation = false;
+            if (scan.Depth == 0 && scan.Quote == '\0' && scan.HereEnd is null)
+            {
+                char last = line.TrimEnd() is { Length: > 0 } t ? t[^1] : '\0';
+                if (last is not (':' or '：' or ';' or '{' or '}'))
+                {
+                    for (int j = i + 1; j < lines.Count; j++)
+                    {
+                        if (string.IsNullOrWhiteSpace(lines[j])) continue;
+                        nextStartsContinuation = LeadingContinuation().IsMatch(lines[j].TrimStart());
+                        break;
+                    }
+                }
+            }
+
+            bool continues = endsWithContinuation || nextStartsContinuation;
 
             if (current.Length == 0 && !continues)
             {

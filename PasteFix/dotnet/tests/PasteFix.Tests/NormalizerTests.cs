@@ -419,4 +419,45 @@ public class NormalizerTests
         string once = Normalizer.Dedent(input);
         Assert.Equal(once, Normalizer.Dedent(once));
     }
+
+// ------------------------------------------------ leading flag continuation
+
+    [Fact]
+    public void JoinsNextLineStartingWithOptionFlags()
+    {
+        string input = "gh release create v1.2.0 PasteFix/dist/PasteFix.exe --title \"Pastefix v1.2.0\"\n--notes-file docs/release-notes/v1.2.0.md";
+        string expected = "gh release create v1.2.0 PasteFix/dist/PasteFix.exe --title \"Pastefix v1.2.0\" --notes-file docs/release-notes/v1.2.0.md";
+        Assert.Equal(expected, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void JoinsNextLineStartingWithShortOption()
+    {
+        string input = "git commit\n  -m \"my message\"";
+        string expected = "git commit -m \"my message\"";
+        Assert.Equal(expected, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void JoinsNextLineStartingWithPipeOrLogicalAnd()
+    {
+        string input = "Get-Process\n  | Select-Object -First 3";
+        string expected = "Get-Process | Select-Object -First 3";
+        Assert.Equal(expected, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void DoesNotJoinYamlListStartingWithDash()
+    {
+        string input = "items:\n  - apple\n  - banana";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
+
+    [Fact]
+    public void DoesNotJoinAfterColonInPython()
+    {
+        string input = "class A:\n    -1";
+        Assert.Equal(input, Normalizer.Normalize(input));
+    }
 }
+

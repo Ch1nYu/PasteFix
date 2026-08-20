@@ -57,6 +57,10 @@ try {
         "Get-ChildItem ```n    -Path ." `
         "Get-ChildItem -Path ."
 
+    Test-AutoMonitor 'normalize: 自動合併換行參數選項' `
+        "gh release create v1.2.0`n--notes-file release.md" `
+        "gh release create v1.2.0 --notes-file release.md"
+
     Test-AutoMonitor 'normalize: 去掉頭尾空行' `
         "`n`ngit status`n`n" `
         "git status"
