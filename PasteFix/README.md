@@ -22,7 +22,7 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 2. **Paste Directly:** Switch to your terminal (WezTerm, Windows Terminal, PowerShell, etc.) and simply press **`Ctrl+V`** or right-click to paste.
 3. **No Keyboard Interception:** Operates entirely through standard clipboard events — no key injection and no keyboard hooks.
 4. **Undo if It Got It Wrong:** The tray menu's **還原上一次清洗** puts the original copy back, for as long as the clipboard still holds what the clean produced. Nothing is written to disk; the way back lives in memory only.
-5. **See What It Did:** Every successful clean adds one line to `%APPDATA%\PasteFix\pastefix.log` with sizes, line counts, and which wrapper was removed — never the text itself.
+5. **See What It Did:** Every clean adds one line to `%APPDATA%\PasteFix\pastefix.log` with sizes, line counts, which wrapper was removed, and which mode ran — never the text itself. Copies that needed no cleaning are logged too, so the log can tell "nothing to do" apart from "never ran".
 
 ### Global Hotkey (optional, off by default)
 

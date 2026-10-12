@@ -15,7 +15,7 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
 2. **Zero Learning Curve:** The user copies with standard `Ctrl+C`, Pastefix cleans the clipboard in the background within 300ms, and the user pastes with standard `Ctrl+V` or mouse right-click into any terminal emulator.
 3. **Explicit Processing Mode:** Smart Continuation remains the safe default. Force Single Line is an explicit, persisted opt-in for flattening every physical line.
 4. **No Destructive Guessing in Smart Mode:** Smart mode does **not** strip shell prompts (`$ `, `PS >`), delete comments (`#`), or strip Markdown fences (````).
-5. **Nothing Is Rewritten Without a Visible Trace:** Every successful clean writes one permanent log line (sizes and counts only). Until v1.4.0 only failures were logged, so a working tool left no evidence it had worked.
+5. **Nothing Is Rewritten Without a Visible Trace:** Every clean writes one permanent log line (sizes, line counts, containers, and the mode — never content), including the copies that needed no cleaning. Until v1.4.0 only failures were logged, so a working tool left no evidence it had worked, and there was no way to answer which mode a given copy wanted.
 6. **Every Rewrite Has a Way Back:** A clean that replaced the clipboard can be undone from the tray menu for as long as the clipboard still holds what the clean produced. AutoMonitor had been toggled off eight times before this existed — an automatic action with no undo can only be avoided, not corrected.
 
 ---
@@ -77,7 +77,7 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
 | **SingleLineNormalizer.cs** | `PasteFix/dotnet/src/PasteFix/SingleLineNormalizer.cs` | Explicitly flattens physical lines and removes only scanner-confirmed `\` or backtick continuation markers. |
 | **ClipboardTransformer.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardTransformer.cs` | Strips the container first, then selects exactly one transformer from the persisted `ProcessingMode`. Returns a `ClipboardResult` (text + which containers were stripped) so the log can report what happened without naming content. |
 | **ClipboardWriteback.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardWriteback.cs` | Pure decision on whether the cleaned text replaces the clipboard. Keeps the skip cases testable without a real clipboard. |
-| **ClipboardSummary.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardSummary.cs` | Describes clipboard text for the log by length only. `pastefix.log` is permanent plain text and passwords get copied too. |
+| **ClipboardSummary.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardSummary.cs` | Describes clipboard text for the log by length, line counts, containers, and mode only. `pastefix.log` is permanent plain text and passwords get copied too. The mode is recorded on every path — including the skips, which are the control group for the open question in section 5. |
 | **LastClean.cs** | `PasteFix/dotnet/src/PasteFix/LastClean.cs` | Holds the text from before the last successful write-back so one clean can be undone. **In memory only** — a restore file would defeat the `len=N` log rule. |
 | **HotkeyWindow.cs** | `PasteFix/dotnet/src/PasteFix/HotkeyWindow.cs` | Registers one global hotkey (`Ctrl+Alt+Shift+V`) via `RegisterHotKey` and raises `Pressed`. This is not input simulation; see gotcha 1. |
 | **OwnWriteGate.cs** | `PasteFix/dotnet/src/PasteFix/OwnWriteGate.cs` | Remembers the Win32 `GetClipboardSequenceNumber()` when Pastefix writes back to the clipboard, preventing infinite loop re-entry. |
@@ -133,7 +133,7 @@ Always run all test gates before publishing or merging:
 ```powershell
 dotnet test PasteFix/dotnet/PasteFix.slnx -c Release --no-restore
 ```
-- Target: 148 tests covering Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
+- Target: 150 tests covering Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
 
 ### 2. Automated Machine Smoke Test
 ```powershell
@@ -145,7 +145,7 @@ pwsh -NoProfile -File tools\manual-test.ps1
 ```powershell
 pwsh -NoProfile -File tools\toggle-test.ps1
 ```
-- Covers AutoMonitor off, both processing modes, mode persistence across a restart, the successful-clean log line (sizes and counts, never content), and hotkey registration. Restores `settings.json`, the clipboard, and the original tray process on exit.
+- Covers AutoMonitor off, both processing modes, mode persistence across a restart, the successful-clean log line (sizes, counts, and mode — never content), the mode recorded on a copy that needed no cleaning, and hotkey registration. Restores `settings.json`, the clipboard, and the original tray process on exit.
 
 ### 4. Tray Menu End-to-End Test
 ```powershell
@@ -181,3 +181,27 @@ Start-Process "PasteFix\dist\PasteFix.exe" -WindowStyle Hidden
 
 - **Keep Dependencies at Zero:** Do not add third-party NuGet packages unless strictly necessary. The project uses standard .NET 10 runtime libraries.
 - **Preserve .gitattributes:** Ensure `.gitattributes` maintains `linguist-vendored` for `PasteFix/legacy/**` and `tools/**` so GitHub language statistics reflect 100% C#.
+
+### Open Question: Should the Two Modes Be Merged?
+
+Do not merge `SmartContinuation` and `SingleLine` without evidence. The log now provides it, and nothing else does.
+
+**Why they are separate:** they are not interchangeable. Smart Continuation rejoins marked continuations and leaves everything else alone; Single Line collapses every physical line and is deliberately destructive to Python, YAML, and heredocs. The user switched between them **32 times between 2026-09-07 and 2026-10-07 — 16 in and 16 out**, five of those round trips within a single minute, which means the switch is usually correcting a wrong mode rather than expressing a lasting preference. The longest Single Line stretch was 1 day 6 hours, so it is not a mode that should never be used.
+
+**The prerequisite is data, not design.** Merging on a guess would replace 32 human judgements with an untested heuristic — exactly the class of change that caused the 2026-08-08 incident.
+
+**What to read when the data has accumulated:** every permanent log line now carries the mode, including the path that changed nothing. The skipped copies are the control group.
+
+```
+cleaned: len=17->17 lines=2->1 containers=none mode=SingleLine
+cleaned: len=29->17 lines=4->2 containers=Fence mode=SmartContinuation
+clean skipped, no change needed: len=41 mode=SmartContinuation
+```
+
+`lines=A->B` is the discriminator: `2->1` is a copy that needed collapsing, `4->4` is one that was already fine, and a skip is one neither mode would touch. Count the ratio, then decide.
+
+```powershell
+Get-Content "$env:APPDATA\PasteFix\pastefix.log" |
+  Select-String 'mode=SingleLine|clean skipped' |
+  Select-Object -Last 100
+```
