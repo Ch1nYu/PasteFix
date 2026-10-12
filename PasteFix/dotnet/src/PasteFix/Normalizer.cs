@@ -176,14 +176,14 @@ public static partial class Normalizer
         return result;
     }
 
-    private sealed class ScanState
+    internal sealed class ScanState
     {
         public int Depth;
         public char Quote;
         public string? HereEnd;
     }
 
-    private static bool ScanLine(string line, ScanState s)
+    internal static bool ScanLine(string line, ScanState s)
     {
         if (s.HereEnd is not null)
         {
@@ -234,4 +234,3 @@ public static partial class Normalizer
         return s.Depth == 0 && ContinuationMarker().IsMatch(line);
     }
 }
-

@@ -84,7 +84,7 @@ public class NormalizerTests
     [Fact]
     public void DedentDoesNotJoinContinuations()
     {
-        // Merging is Normalize's job, not Dedent's — AutoMonitor must stay lossless.
+        // Merging is Normalize's job, not Dedent's.
         Assert.Equal("npm install \\\n--save express", Normalizer.Dedent("npm install \\\n--save express"));
     }
 
@@ -100,7 +100,7 @@ public class NormalizerTests
     // left margin every following line carries. The common prefix is then empty
     // and an ordinary dedent can do nothing. Normalize strips it when line 1 is
     // syntactically finished, because then the indent below has no grammar to
-    // justify it. Dedent never does — AutoMonitor runs Dedent.
+    // justify it. Dedent never does.
 
     [Fact]
     public void MarginIsStrippedWhenFirstLineIsAFinishedStatement()
@@ -174,7 +174,7 @@ public class NormalizerTests
     [Fact]
     public void DedentNeverRepairsTheMargin()
     {
-        // AutoMonitor's path stays structure-preserving.
+        // Dedent stays structure-preserving.
         string input = "x = 1\n  y = 2";
         Assert.Equal(input, Normalizer.Dedent(input));
     }

@@ -12,6 +12,8 @@ public sealed class TrayApplication : ApplicationContext
     private readonly MessageWindow _window = new();
     private readonly Settings _settings;
     private readonly ToolStripMenuItem _autoMonitorItem;
+    private readonly ToolStripMenuItem _smartModeItem;
+    private readonly ToolStripMenuItem _singleLineModeItem;
     private readonly OwnWriteGate _ownWriteGate = new();
 
     public TrayApplication()
@@ -24,10 +26,24 @@ public sealed class TrayApplication : ApplicationContext
             Checked = _settings.AutoMonitor,
         };
 
+        _smartModeItem = new ToolStripMenuItem(
+            "智慧續行（現有）",
+            null,
+            (_, _) => SetProcessingMode(ProcessingMode.SmartContinuation));
+        _singleLineModeItem = new ToolStripMenuItem(
+            "強制單行",
+            null,
+            (_, _) => SetProcessingMode(ProcessingMode.SingleLine));
+
+        var processingModeItem = new ToolStripMenuItem("處理模式");
+        processingModeItem.DropDownItems.Add(_smartModeItem);
+        processingModeItem.DropDownItems.Add(_singleLineModeItem);
+
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
+        menu.Items.Add(processingModeItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => Application.Exit()));
 
@@ -77,6 +93,11 @@ public sealed class TrayApplication : ApplicationContext
             _clipDebounce.Tick += (_, _) =>
             {
                 _clipDebounce.Stop();
+                if (!_settings.AutoMonitor)
+                {
+                    Trace("  AutoMonitor disabled before debounce completed");
+                    return;
+                }
                 if (_ownWriteGate.IsOwnWrite(GetClipboardSequenceNumber()))
                 {
                     Trace("  clipboard sequence is our own write-back, monitor skips");
@@ -96,14 +117,30 @@ public sealed class TrayApplication : ApplicationContext
     private void ApplySettings()
     {
         _window.SetClipboardListening(_settings.AutoMonitor);
+        SyncProcessingModeChecks();
     }
 
     private void OnAutoMonitorToggle(object? sender, EventArgs e)
     {
         _settings.AutoMonitor = _autoMonitorItem.Checked;
+        if (!_settings.AutoMonitor) _clipDebounce?.Stop();
         _window.SetClipboardListening(_settings.AutoMonitor);
         _settings.Save();
         Program.Log($"AutoMonitor -> {_settings.AutoMonitor} (saved to {Settings.FilePath})");
+    }
+
+    private void SetProcessingMode(ProcessingMode mode)
+    {
+        _settings.Mode = mode;
+        SyncProcessingModeChecks();
+        _settings.Save();
+        Program.Log($"ProcessingMode -> {_settings.Mode} (saved to {Settings.FilePath})");
+    }
+
+    private void SyncProcessingModeChecks()
+    {
+        _smartModeItem.Checked = _settings.Mode == ProcessingMode.SmartContinuation;
+        _singleLineModeItem.Checked = _settings.Mode == ProcessingMode.SingleLine;
     }
 
     private bool CleanClipboard(bool showNotification = true)
@@ -117,16 +154,45 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        string cleaned = Normalizer.Normalize(text);
+        string cleaned = ClipboardTransformer.Transform(text, _settings.Mode);
         Trace($"  cleaned=[{cleaned}]");
-        if (cleaned == text)
+
+        switch (ClipboardWriteback.Decide(text, cleaned))
         {
-            Trace("  no change needed (idempotent)");
-            if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
+            case ClipboardWriteDecision.NothingToDo:
+                Trace("  no change needed (idempotent)");
+                if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
+                return false;
+
+            case ClipboardWriteDecision.EmptyResult:
+                // The copy held nothing but whitespace, so cleaning leaves no
+                // text at all. SetText rejects that, and an empty result is not
+                // a cleaning anyway — the clipboard keeps what was copied.
+                Program.Log($"clean produced empty text ({ClipboardSummary.Describe(text)}), clipboard left as copied");
+                Trace("  empty result, clipboard left untouched");
+                if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "清洗後沒有內容，剪貼簿保持原樣", ToolTipIcon.Info);
+                return false;
+        }
+
+        try
+        {
+            Clipboard.SetText(cleaned);
+        }
+        catch (ExternalException ex)
+        {
+            // Another process holds the clipboard open. SetText already retried
+            // ten times over a second before throwing, so retrying again here
+            // would only repeat the same wait. Left unhandled this reaches
+            // Application.ThreadException, which logs it and keeps the tray
+            // alive — so the paste simply goes out uncleaned with no sign of
+            // why. Other exception types are still left to that handler, so a
+            // genuine bug stays visible instead of being blamed on contention.
+            Program.Log($"clipboard write failed ({ClipboardSummary.Describe(cleaned)}, 0x{ex.HResult:X8}), left uncleaned");
+            Trace($"  write failed 0x{ex.HResult:X8}");
+            if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿被其他程式佔用，這次沒有清洗", ToolTipIcon.Warning);
             return false;
         }
 
-        Clipboard.SetText(cleaned);
         _ownWriteGate.MarkOwnWrite(GetClipboardSequenceNumber());
         Trace($"  wrote back [{cleaned}]");
 

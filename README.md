@@ -21,6 +21,12 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 2. **Paste Directly:** Switch to your terminal (WezTerm, Windows Terminal, PowerShell, etc.) and simply press **`Ctrl+V`** or right-click to paste.
 3. **No New Hotkeys:** Operates entirely through standard clipboard events — no global hotkey conflicts and no keyboard interception.
 
+### Processing Modes
+
+Choose one mode from the tray's **處理模式** submenu. **Smart Continuation** is the default and preserves structured multi-line content while joining recognized shell continuations. **Force Single Line** trims each physical line and joins every non-empty line with one space.
+
+Force Single Line is intentionally destructive for Python, YAML, here-strings, heredocs, and blocks containing multiple commands. Use Smart Continuation when line structure matters.
+
 ---
 
 ## Download & Usage
@@ -32,4 +38,3 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 - **Standalone Executable:** Single self-contained binary with embedded runtime (~51 MB, no installation needed).
 - **Single-Instance:** Automatically prevents multiple background instances.
 - **Config & Logs:** Stored locally in `%APPDATA%\PasteFix`.
-
