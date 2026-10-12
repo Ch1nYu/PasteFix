@@ -8,4 +8,31 @@ namespace PasteFix;
 public static class ClipboardSummary
 {
     public static string Describe(string? text) => $"len={text?.Length ?? 0}";
+
+    /// <summary>
+    /// What a clean did, in a form safe to keep forever: sizes and counts, never
+    /// text. Before this existed the permanent log recorded only failures, so a
+    /// working tool left no trace of working.
+    /// </summary>
+    public static string Describe(string? before, string? after, IReadOnlyList<ContainerKind> stripped)
+    {
+        int linesBefore = CountLines(before);
+        int linesAfter = CountLines(after);
+
+        return $"len={before?.Length ?? 0}->{after?.Length ?? 0} " +
+               $"lines={linesBefore}->{linesAfter} " +
+               $"containers={(stripped.Count == 0 ? "none" : string.Join("+", stripped))}";
+    }
+
+    private static int CountLines(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+
+        int lines = 1;
+        foreach (char c in text)
+        {
+            if (c == '\n') lines++;
+        }
+        return lines;
+    }
 }

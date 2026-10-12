@@ -69,12 +69,43 @@ try {
         "  foo`r`n  bar" `
         "foo`r`nbar"
 
+    # PowerShell 把倒引號當轉義字元，所以 fence 用字元碼組出來；直接寫在
+    # 雙引號字串裡會變成退格鍵（`b）而不是一個倒引號。
+    $bt = [char]0x60
+    $fence = "$bt$bt$bt"
+
+    Write-Host ""
+    Write-Host "== 容器剝除：整份複製都被包住時才拆掉外框 ==" -ForegroundColor Cyan
+
+    Test-AutoMonitor 'container: markdown fence 剝除' `
+        (@("${fence}bash", 'git status', $fence) -join "`n") `
+        'git status'
+
+    Test-AutoMonitor 'container: fence 與 prompt gutter 一起剝除' `
+        (@("${fence}powershell", 'PS C:\Users\me> echo one', 'PS C:\Users\me> echo two', $fence) -join "`n") `
+        "echo one`necho two"
+
+    Test-AutoMonitor 'container: prompt gutter 剝除' `
+        "`$ echo one`n`$ echo two" `
+        "echo one`necho two"
+
+    Test-AutoMonitor 'container: 行號 gutter 剝除' `
+        "1: echo one`n2: echo two" `
+        "echo one`necho two"
+
+    Test-AutoMonitor 'container: 行號不連續就不是 gutter' `
+        "1: echo one`n3: echo two" `
+        "1: echo one`n3: echo two"
+
     Write-Host ""
     Write-Host "== 守衛：非指令區塊保護 ==" -ForegroundColor Cyan
 
-    Test-AutoMonitor -name 'guard: prompt 不剝除' -text '$ npm install' -expected '$ npm install'
+    Test-AutoMonitor -name 'guard: 單行 prompt 不剝除（沒有側邊）' -text '$ npm install' -expected '$ npm install'
     Test-AutoMonitor -name 'guard: 註解不刪除' -text "# install deps`nnpm install" -expected "# install deps`nnpm install"
-    Test-AutoMonitor -name 'guard: fence 不移除' -text "'''bash`ngit status`n'''" -expected "'''bash`ngit status`n'''"
+    Test-AutoMonitor -name 'guard: 未閉合的 fence 不動' `
+        -text (@("${fence}bash", 'git status') -join "`n") `
+        -expected (@("${fence}bash", 'git status') -join "`n")
+    Test-AutoMonitor -name 'guard: markdown 編號清單不被當成 gutter' -text "1. Run the installer`n2. Restart the shell" -expected "1. Run the installer`n2. Restart the shell"
     Test-AutoMonitor -name 'guard: windows 路徑不被當成續行' -text "cd C:\temp\`ndir" -expected "cd C:\temp\`ndir"
 }
 finally {

@@ -6,9 +6,12 @@ AutoMonitor 與處理模式的 runtime 回歸測試。
   - SmartContinuation 保留兩條獨立指令的換行。
   - SingleLine 將兩條指令壓成一行。
   - SingleLine 模式在重新啟動後仍會保留。
+  - 成功的清洗會在永久 log 留下長度、行數與容器（不寫內容）。
+  - 全域熱鍵依設定註冊或保持關閉。
 
 腳本結束時會還原完整 settings.json、文字剪貼簿內容，以及原本執行中的
-PasteFix process。立即清洗仍由 GUI smoke 驗證。
+PasteFix process。立即清洗與「還原上一次清洗」的選單點擊仍由 GUI smoke
+驗證；這裡只釘住設定與 log 這兩條可自動化的路徑。
 
 用法：
   pwsh -File tools\toggle-test.ps1
@@ -64,7 +67,7 @@ function Stop-PasteFix {
     Start-Sleep -Milliseconds 800
 }
 
-function Write-TestSettings([bool]$autoMonitor, [int]$mode) {
+function Write-TestSettings([bool]$autoMonitor, [int]$mode, [bool]$hotkey = $false) {
     if (-not (Test-Path -LiteralPath $settingsDirectory -PathType Container)) {
         New-Item -ItemType Directory -Path $settingsDirectory | Out-Null
     }
@@ -72,6 +75,7 @@ function Write-TestSettings([bool]$autoMonitor, [int]$mode) {
     [ordered]@{
         AutoMonitor = $autoMonitor
         Mode = $mode
+        HotkeyEnabled = $hotkey
     } | ConvertTo-Json | Set-Content -LiteralPath $settings -Encoding utf8
 }
 
@@ -82,9 +86,9 @@ function Start-TestTray {
     return $before
 }
 
-function Restart-TestTray([bool]$autoMonitor, [int]$mode) {
+function Restart-TestTray([bool]$autoMonitor, [int]$mode, [bool]$hotkey = $false) {
     Stop-PasteFix
-    Write-TestSettings -autoMonitor $autoMonitor -mode $mode
+    Write-TestSettings -autoMonitor $autoMonitor -mode $mode -hotkey $hotkey
     return Start-TestTray
 }
 
@@ -168,6 +172,50 @@ try {
     $actual = Set-AndReadClipboard $twoCommands
     Assert-State 'restart: SingleLine 行為仍生效' ($actual -eq $singleLine) `
         "預期 [$singleLine]，實際 [$($actual -replace "`n", ' / ')]"
+
+    Write-Host ''
+    Write-Host '== 可觀察性：成功清洗會留下永久記錄 ==' -ForegroundColor Cyan
+    $before = Restart-TestTray -autoMonitor $true -mode 0
+    $lines = Get-NewLogLines $before
+    $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+
+    # PowerShell 把倒引號當轉義字元，所以 fence 用字元碼組出來。
+    $bt = [char]0x60
+    $fence = "$bt$bt$bt"
+    $fenced = (@("${fence}bash", 'echo one', 'echo two', $fence) -join "`n")
+    $actual = Set-AndReadClipboard $fenced
+    $lines = Get-NewLogLines $before
+
+    Assert-State 'observable: 容器被剝除' ($actual -eq $twoCommands) `
+        "預期 [$($twoCommands -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
+
+    # 這是 2026-10-12 之前的缺口：只有失敗會寫永久 log，工具正常工作時
+    # 一點痕跡都不留，使用者無從得知它幫上忙了沒有。
+    Assert-State 'observable: log 記下成功清洗（長度、行數、容器）' `
+        ([bool]($lines -match 'cleaned: len=\d+->\d+ lines=\d+->\d+ containers=Fence')) `
+        "log 沒有成功清洗的記錄：$($lines -join ' | ')"
+
+    Assert-State 'observable: log 不含剪貼簿內容' `
+        (-not ($lines -match 'echo one')) 'log 洩漏了剪貼簿內容'
+
+    Write-Host ''
+    Write-Host '== 全域熱鍵 ==' -ForegroundColor Cyan
+    $before = Restart-TestTray -autoMonitor $true -mode 0 -hotkey $false
+    $lines = Get-NewLogLines $before
+    $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+
+    Assert-State 'hotkey: 預設關閉時不註冊' `
+        (-not ($lines -match 'hotkey Ctrl\+Alt\+Shift\+V registered')) '預設關閉卻註冊了熱鍵'
+
+    $before = Restart-TestTray -autoMonitor $true -mode 0 -hotkey $true
+    $lines = Get-NewLogLines $before
+    $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+
+    # 註冊失敗也算通過：組合鍵可能被別的程式佔用，那條路徑自己會回報。
+    # 這裡釘住的是設定真的走到了 RegisterHotKey，而不是被靜默忽略。
+    Assert-State 'hotkey: 開啟時向 Windows 註冊' `
+        ([bool]($lines -match 'hotkey Ctrl\+Alt\+Shift\+V (registered|unavailable)')) `
+        "log 沒有熱鍵註冊的結果：$($lines -join ' | ')"
 }
 catch {
     $testError = $_

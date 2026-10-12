@@ -52,10 +52,10 @@ $script:Cases = [ordered]@{
         AltV   = '（原樣不動，五行）'
     }
     I = @{
-        Why    = '已移除的規則：fence / prompt / 註解都不准動'
+        Why    = '容器剝除：fence 拆掉，但註解仍然不准動，且單行 prompt 沒有側邊所以不拆'
         Raw    = (@('```bash', '$ npm install', '# comment', '```') -join "`n")
-        CtrlV  = '（原樣不動，四行）'
-        AltV   = '（原樣不動，四行）'
+        CtrlV  = (@('$ npm install', '# comment') -join "`n")
+        AltV   = (@('$ npm install', '# comment') -join "`n")
     }
     J = @{
         Why    = '&& 續行：自動合併，且 && 保留'
@@ -92,6 +92,24 @@ $script:Cases = [ordered]@{
         Raw    = (@('if (x) {', '      y = 1', '  }') -join "`n")
         CtrlV  = '（原樣不動——shell 不在乎行首空白，多兩格照跑）'
         AltV   = '（原樣不動——shell 不在乎行首空白，多兩格照跑）'
+    }
+    P = @{
+        Why    = '容器剝除：整份都是 prompt gutter，兩行以上才拆'
+        Raw    = (@('PS C:\\Users\\me> echo one', 'PS C:\\Users\\me> echo two') -join "`n")
+        CtrlV  = (@('echo one', 'echo two') -join "`n")
+        AltV   = (@('echo one', 'echo two') -join "`n")
+    }
+    Q = @{
+        Why    = '容器剝除：行號 gutter（部分複製的 scrollback）'
+        Raw    = (@('42: echo one', '43: echo two') -join "`n")
+        CtrlV  = (@('echo one', 'echo two') -join "`n")
+        AltV   = (@('echo one', 'echo two') -join "`n")
+    }
+    R = @{
+        Why    = '守衛：markdown 編號清單是散文，不是行號 gutter'
+        Raw    = (@('1. Run the installer', '2. Restart the shell') -join "`n")
+        CtrlV  = '（原樣不動，兩行）'
+        AltV   = '（原樣不動，兩行）'
     }
 }
 

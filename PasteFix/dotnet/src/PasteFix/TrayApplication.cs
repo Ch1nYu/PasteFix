@@ -10,11 +10,15 @@ public sealed class TrayApplication : ApplicationContext
 {
     private readonly NotifyIcon _icon;
     private readonly MessageWindow _window = new();
+    private readonly HotkeyWindow _hotkeyWindow = new();
     private readonly Settings _settings;
     private readonly ToolStripMenuItem _autoMonitorItem;
     private readonly ToolStripMenuItem _smartModeItem;
     private readonly ToolStripMenuItem _singleLineModeItem;
+    private readonly ToolStripMenuItem _hotkeyItem;
+    private readonly ToolStripMenuItem _restoreItem;
     private readonly OwnWriteGate _ownWriteGate = new();
+    private readonly LastClean _lastClean = new();
 
     public TrayApplication()
     {
@@ -39,13 +43,24 @@ public sealed class TrayApplication : ApplicationContext
         processingModeItem.DropDownItems.Add(_smartModeItem);
         processingModeItem.DropDownItems.Add(_singleLineModeItem);
 
+        _hotkeyItem = new ToolStripMenuItem("全域熱鍵（Ctrl+Alt+Shift+V）", null, OnHotkeyToggle)
+        {
+            CheckOnClick = true,
+            Checked = _settings.HotkeyEnabled,
+        };
+
+        _restoreItem = new ToolStripMenuItem("還原上一次清洗", null, (_, _) => RestoreLastClean());
+
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard()));
+        menu.Items.Add(_restoreItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
         menu.Items.Add(processingModeItem);
+        menu.Items.Add(_hotkeyItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => Application.Exit()));
+        menu.Opening += (_, _) => _restoreItem.Enabled = _lastClean.CanRestore;
 
         _icon = new NotifyIcon
         {
@@ -57,6 +72,7 @@ public sealed class TrayApplication : ApplicationContext
         _icon.DoubleClick += (_, _) => CleanClipboard();
 
         _window.ClipboardChanged += OnClipboardChanged;
+        _hotkeyWindow.Pressed += () => CleanClipboard();
 
         ApplySettings();
     }
@@ -118,6 +134,16 @@ public sealed class TrayApplication : ApplicationContext
     {
         _window.SetClipboardListening(_settings.AutoMonitor);
         SyncProcessingModeChecks();
+
+        _hotkeyWindow.SetHotkey(_settings.HotkeyEnabled);
+        if (_settings.HotkeyEnabled && !_hotkeyWindow.Registered)
+        {
+            // Another program holds the combination. Show it as off rather than
+            // pretending the key works; the setting stays as chosen so the next
+            // start can claim it if the other program is gone.
+            _hotkeyItem.Checked = false;
+            Program.Log("hotkey unavailable, menu item shown unchecked");
+        }
     }
 
     private void OnAutoMonitorToggle(object? sender, EventArgs e)
@@ -127,6 +153,20 @@ public sealed class TrayApplication : ApplicationContext
         _window.SetClipboardListening(_settings.AutoMonitor);
         _settings.Save();
         Program.Log($"AutoMonitor -> {_settings.AutoMonitor} (saved to {Settings.FilePath})");
+    }
+
+    private void OnHotkeyToggle(object? sender, EventArgs e)
+    {
+        _settings.HotkeyEnabled = _hotkeyItem.Checked;
+        _hotkeyWindow.SetHotkey(_settings.HotkeyEnabled);
+        if (_settings.HotkeyEnabled && !_hotkeyWindow.Registered)
+        {
+            _hotkeyItem.Checked = false;
+            _settings.HotkeyEnabled = false;
+            _icon.ShowBalloonTip(1500, "Pastefix", "熱鍵已被其他程式占用", ToolTipIcon.Warning);
+        }
+        _settings.Save();
+        Program.Log($"Hotkey -> {_settings.HotkeyEnabled} (saved to {Settings.FilePath})");
     }
 
     private void SetProcessingMode(ProcessingMode mode)
@@ -154,7 +194,8 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        string cleaned = ClipboardTransformer.Transform(text, _settings.Mode);
+        ClipboardResult result = ClipboardTransformer.Transform(text, _settings.Mode);
+        string cleaned = result.Text;
         Trace($"  cleaned=[{cleaned}]");
 
         switch (ClipboardWriteback.Decide(text, cleaned))
@@ -194,11 +235,54 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         _ownWriteGate.MarkOwnWrite(GetClipboardSequenceNumber());
+        _lastClean.Record(text, cleaned);
+        // The permanent record of a clean that worked. Until this existed only
+        // failures were ever written here, so a working tool left no trace.
+        Program.Log($"cleaned: {ClipboardSummary.Describe(text, cleaned, result.Stripped)}");
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
             _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);
         return true;
+    }
+
+    private void RestoreLastClean()
+    {
+        if (!_lastClean.CanRestore)
+        {
+            _icon.ShowBalloonTip(1200, "Pastefix", "沒有可還原的清洗", ToolTipIcon.Info);
+            return;
+        }
+
+        string? current = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+        if (!_lastClean.StillOnClipboard(current))
+        {
+            // Something was copied after the clean. Putting the old text back
+            // would destroy that copy, so the restore is dropped instead.
+            _lastClean.Clear();
+            Program.Log("restore skipped, clipboard moved on since the clean");
+            _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已換過內容，無法還原", ToolTipIcon.Warning);
+            return;
+        }
+
+        string? before = _lastClean.Before;
+        try
+        {
+            Clipboard.SetText(before!);
+        }
+        catch (ExternalException ex)
+        {
+            // The clean is kept: the clipboard was busy for a moment, and that
+            // should not cost the user the only way back.
+            Program.Log($"restore failed (0x{ex.HResult:X8})");
+            _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿被其他程式佔用，無法還原", ToolTipIcon.Warning);
+            return;
+        }
+
+        _lastClean.Clear();
+        _ownWriteGate.MarkOwnWrite(GetClipboardSequenceNumber());
+        Program.Log($"restored previous clipboard ({ClipboardSummary.Describe(before)})");
+        _icon.ShowBalloonTip(1200, "Pastefix", "已還原上一次複製的內容", ToolTipIcon.Info);
     }
 
     private static void Trace(string message)
@@ -222,8 +306,8 @@ public sealed class TrayApplication : ApplicationContext
         _icon.Visible = false;
         _icon.Dispose();
         _clipDebounce?.Dispose();
+        _hotkeyWindow.DestroyHandle();
         _window.ReleaseHandle();
         base.ExitThreadCore();
     }
 }
-

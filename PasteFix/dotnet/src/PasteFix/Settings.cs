@@ -9,6 +9,14 @@ public sealed class Settings
     public bool AutoMonitor { get; set; } = true;
     public ProcessingMode Mode { get; set; } = ProcessingMode.SmartContinuation;
 
+    /// <summary>
+    /// Off by default. AutoMonitor already covers the copy-then-paste flow, so
+    /// the hotkey is only for cleaning a clipboard that was filled before the
+    /// tool started or while the monitor was off. A global hotkey that claims a
+    /// combination out of nowhere is the kind of surprise this tool avoids.
+    /// </summary>
+    public bool HotkeyEnabled { get; set; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -51,6 +59,12 @@ public sealed class Settings
             Enum.IsDefined((ProcessingMode)rawMode))
         {
             settings.Mode = (ProcessingMode)rawMode;
+        }
+
+        if (root.TryGetProperty(nameof(HotkeyEnabled), out JsonElement hotkey) &&
+            hotkey.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            settings.HotkeyEnabled = hotkey.GetBoolean();
         }
 
         return settings;

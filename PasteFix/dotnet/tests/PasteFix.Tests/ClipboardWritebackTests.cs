@@ -19,7 +19,7 @@ public class ClipboardWritebackTests
         // The exact crash: SplitLines drops whitespace-only lines, so the whole
         // input reduces to nothing, and the empty result used to be written back.
         const string copied = "\n\n";
-        string cleaned = ClipboardTransformer.Transform(copied, ProcessingMode.SmartContinuation);
+        string cleaned = ClipboardTransformer.Transform(copied, ProcessingMode.SmartContinuation).Text;
 
         Assert.Equal("", cleaned);
         Assert.Equal(ClipboardWriteDecision.EmptyResult, ClipboardWriteback.Decide(copied, cleaned));
@@ -29,7 +29,7 @@ public class ClipboardWritebackTests
     public void WhitespaceOnlyCopyIsNotWrittenBackInSingleLineModeEither()
     {
         const string copied = "   \r\n\t\r\n  ";
-        string cleaned = ClipboardTransformer.Transform(copied, ProcessingMode.SingleLine);
+        string cleaned = ClipboardTransformer.Transform(copied, ProcessingMode.SingleLine).Text;
 
         Assert.Equal("", cleaned);
         Assert.Equal(ClipboardWriteDecision.EmptyResult, ClipboardWriteback.Decide(copied, cleaned));
@@ -54,7 +54,7 @@ public class ClipboardWritebackTests
     public void CleanedTextReplacesTheClipboard()
     {
         const string copied = "    echo one\n    echo two";
-        string cleaned = ClipboardTransformer.Transform(copied, ProcessingMode.SmartContinuation);
+        string cleaned = ClipboardTransformer.Transform(copied, ProcessingMode.SmartContinuation).Text;
 
         Assert.Equal("echo one\necho two", cleaned);
         Assert.Equal(ClipboardWriteDecision.Write, ClipboardWriteback.Decide(copied, cleaned));

@@ -9,7 +9,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
 
     <!-- Version aligned with the release and git tags -->
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
     <Product>Pastefix</Product>
     <Description>Makes a multi-line command copied from a chat window pasteable into a terminal in one go.</Description>
     <Copyright>Copyright (c) 2026 Ch1nYu</Copyright>

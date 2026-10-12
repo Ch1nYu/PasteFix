@@ -12,6 +12,7 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 - **Broken Command Lines:** Reconnects split lines when flags (like `--flag` or `-m`) or operators (`|`) wrap to the next line.
 - **Common Indentation (Dedent):** Strips outer margins while preserving internal relative indents for Python, YAML, and here-strings.
 - **Empty Pipeline Errors:** Drops empty lines between pipes to prevent PowerShell `EmptyPipeElement` parser errors.
+- **Copied Wrappers:** Removes a markdown fence, a repeated shell prompt (`PS C:\> `, `$ `, `❯ `), or a line-number gutter (`1: `, `42| `) when it wraps the entire copy. A wrapper that does not cover everything — a fence around only part of the text, a single prompt line, a markdown list like `1. Run the installer` — is left untouched.
 
 ---
 
@@ -19,7 +20,15 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 
 1. **Copy as Usual:** When you copy any text (`Ctrl+C`), Pastefix automatically optimizes the clipboard in the background within 300ms.
 2. **Paste Directly:** Switch to your terminal (WezTerm, Windows Terminal, PowerShell, etc.) and simply press **`Ctrl+V`** or right-click to paste.
-3. **No New Hotkeys:** Operates entirely through standard clipboard events — no global hotkey conflicts and no keyboard interception.
+3. **No Keyboard Interception:** Operates entirely through standard clipboard events — no key injection and no keyboard hooks.
+4. **Undo if It Got It Wrong:** The tray menu's **還原上一次清洗** puts the original copy back, for as long as the clipboard still holds what the clean produced. Nothing is written to disk; the way back lives in memory only.
+5. **See What It Did:** Every successful clean adds one line to `%APPDATA%\PasteFix\pastefix.log` with sizes, line counts, and which wrapper was removed — never the text itself.
+
+### Global Hotkey (optional, off by default)
+
+**Ctrl+Alt+Shift+V** cleans the clipboard on demand, for copies made while the monitor was off or before Pastefix started. Enable it from the tray menu; if another program already owns the combination, the menu item reports it and stays off.
+
+The key is registered with `RegisterHotKey`, which asks Windows to notify Pastefix when the combination is pressed. It does not send keystrokes and does not hook the keyboard.
 
 ### Processing Modes
 
