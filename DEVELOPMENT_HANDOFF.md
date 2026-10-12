@@ -1,7 +1,7 @@
 # Pastefix Development & Architecture Handoff
 
 > **Target Audience:** Future AI coding agents and human maintainers.  
-> **Last Updated:** 2026-10-12 (v1.4.0)
+> **Last Updated:** 2026-10-12 (v1.4.0 + post-release mode logging)
 > **Repository:** `C:\active\實用小東西\processing\pastefix`
 
 ---
@@ -114,7 +114,9 @@ Future agents **MUST** review these design decisions before proposing changes:
 - `ClipboardTransformer.Transform` must call exactly one transformer. Never run Smart Continuation before or after Force Single Line.
 - Force Single Line intentionally destroys multi-line structure. Keep it opt-in and keep Smart Continuation as the upgrade-safe default.
 
-### ⚠️ Gotcha 6: `Clipboard.SetText` Rejects Empty Text, and `Application.ThreadException` Hides Every Failure- `Clipboard.SetText("")` throws `ArgumentNullException` (`ThrowIfNullOrEmpty`). Cleaning a copy that held only whitespace produces exactly that empty string, so the write-back must be skipped — `ClipboardWriteback.Decide` returns `EmptyResult` for it. Six such crashes are in `pastefix.log` between 2026-09-03 and 2026-10-10.
+### ⚠️ Gotcha 6: `Clipboard.SetText` Rejects Empty Text, and `Application.ThreadException` Hides Every Failure
+
+- `Clipboard.SetText("")` throws `ArgumentNullException` (`ThrowIfNullOrEmpty`). Cleaning a copy that held only whitespace produces exactly that empty string, so the write-back must be skipped — `ClipboardWriteback.Decide` returns `EmptyResult` for it. Six such crashes are in `pastefix.log` between 2026-09-03 and 2026-10-10.
 - `Program.cs` installs an `Application.ThreadException` handler so a clipboard error cannot kill the tray. The cost is that a failure is **silent**: the log records it, the tray keeps running, and the only symptom is a paste that was not cleaned. Thirteen `ExternalException 0x800401D0 CLIPBRD_E_CANT_OPEN` failures were logged the same way before anyone noticed.
 - **Rule:** treat every exception on the clipboard path as something the user must be able to see. Log it **and** surface it; do not let `ThreadException` be the only witness. Before shipping, check `pastefix.log` for `ThreadException` entries — that is how these two were found.
 - Do not add a retry loop around `SetText`: it already retries ten times over a full second before throwing.
@@ -125,7 +127,16 @@ Future agents **MUST** review these design decisions before proposing changes:
 - **The visible-miss trade:** `1. ` / `1) ` are markdown ordered-list syntax, not gutter syntax, and are therefore never stripped — a numbered code block written that way is a miss the user can see. A single `$ npm install` is not stripped either: a gutter needs 2+ lines to have a side. Always prefer a visible miss over silent damage.
 - **The fence guard test in `tools/manual-test.ps1` was broken for three releases:** it asserted on `'''bash` (three apostrophes) rather than backticks, so it never exercised a real fence. PowerShell treats a backtick as an escape character inside double-quoted strings — build fence literals from `[char]0x60`.
 
+### ⚠️ Gotcha 8: The Log Is the Only Record of What the Tool Did
+
+- `pastefix.log` is the sole durable trace. Clipboard content never reaches it (see the `len=N` rule), so the mode field is what makes the log answer *which transformer ran on this copy* after the fact. Dropping the mode from a log line removes the only evidence for the open question in section 5.
+- **Do not make the mode field optional on the write path.** The skips matter as much as the writes: a copy neither mode would touch is the control group. A log that only records changes cannot distinguish "nothing to do" from "never ran" — that gap is exactly why v1.4.0 added the skip line.
+- **Do not trust the version string to tell you whether the mode field is present.** `334d377` added `mode=` without bumping `<Version>`, so the local `PasteFix/dist/PasteFix.exe` was republished at 18:30:30 — after that commit — and still reports `1.4.0+65e04c7a86e1dfe5e71b66d5b3b85d592d340e1d`, the same version as the GitHub `v1.4.0` asset, which was built from `65e04c7` and has no field. Two different binaries, one version string. The only reliable test is whether the log lines themselves contain `mode=`.
+- **Roadmap items may be implemented after a tag without a new version.** `334d377` and `8972163` are on `main` but inside no release, and `<Version>` still reads `1.4.0`. When counting the two weeks of evidence in section 5, count lines that contain `mode=` rather than lines from a version range.
+
 ---
+
+## 4. Verification Playbook
 
 Always run all test gates before publishing or merging:
 
@@ -188,9 +199,9 @@ Do not merge `SmartContinuation` and `SingleLine` without evidence. The log now 
 
 **Why they are separate:** they are not interchangeable. Smart Continuation rejoins marked continuations and leaves everything else alone; Single Line collapses every physical line and is deliberately destructive to Python, YAML, and heredocs. The user switched between them **32 times between 2026-09-07 and 2026-10-07 — 16 in and 16 out**, five of those round trips within a single minute, which means the switch is usually correcting a wrong mode rather than expressing a lasting preference. The longest Single Line stretch was 1 day 6 hours, so it is not a mode that should never be used.
 
-**The prerequisite is data, not design.** Merging on a guess would replace 32 human judgements with an untested heuristic — exactly the class of change that caused the 2026-08-08 incident.
+**The prerequisite is data, not design.** Merging on a guess would replace 32 human judgements with an untested heuristic — exactly the class of change that caused the 2026-08-08 incident. There is no data yet: before `334d377`, no log line said which mode ran, so the 32 switches have no matching record of what the copies actually needed. The two weeks of evidence start from the first `mode=` line, not from the switches.
 
-**What to read when the data has accumulated:** every permanent log line now carries the mode, including the path that changed nothing. The skipped copies are the control group.
+**What to read when the data has accumulated:** every permanent log line from a build that carries `mode=` records it, including the path that changed nothing. The skipped copies are the control group.
 
 ```
 cleaned: len=17->17 lines=2->1 containers=none mode=SingleLine
@@ -205,3 +216,5 @@ Get-Content "$env:APPDATA\PasteFix\pastefix.log" |
   Select-String 'mode=SingleLine|clean skipped' |
   Select-Object -Last 100
 ```
+
+**Before counting, check the build.** `git show v1.4.0:PasteFix/dotnet/src/PasteFix/ClipboardSummary.cs` contains no `mode=`; the field arrived in `334d377`, which is on `main` inside no release. The `v1.4.0` GitHub asset is `1.4.0+65e04c7` and also lacks it. Only lines from a build reporting a version at or after `334d377` are usable evidence.
