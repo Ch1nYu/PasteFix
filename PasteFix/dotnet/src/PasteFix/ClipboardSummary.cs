@@ -10,18 +10,36 @@ public static class ClipboardSummary
     public static string Describe(string? text) => $"len={text?.Length ?? 0}";
 
     /// <summary>
+    /// A copy that was looked at but never written back, tagged with the mode
+    /// that was active. Every path records the mode, including the ones that
+    /// changed nothing, because the log is the only place that can answer which
+    /// mode a given copy wanted — and that answer is the precondition for ever
+    /// merging the two modes back into one.
+    /// </summary>
+    public static string Describe(string? text, ProcessingMode mode) =>
+        $"len={text?.Length ?? 0} mode={mode}";
+
+    /// <summary>
     /// What a clean did, in a form safe to keep forever: sizes and counts, never
     /// text. Before this existed the permanent log recorded only failures, so a
     /// working tool left no trace of working.
+    ///
+    /// The mode belongs in the record because the two are not interchangeable:
+    /// SmartContinuation rejoins marked continuations and leaves the rest alone,
+    /// SingleLine collapses everything. <c>lines=4->1 mode=SingleLine</c> is a
+    /// copy that needed collapsing; <c>lines=4->4 mode=SmartContinuation</c> is
+    /// one that was already fine. Reading those two lines side by side is how
+    /// the mode question gets settled with evidence instead of memory.
     /// </summary>
-    public static string Describe(string? before, string? after, IReadOnlyList<ContainerKind> stripped)
+    public static string Describe(string? before, string? after, IReadOnlyList<ContainerKind> stripped, ProcessingMode mode)
     {
         int linesBefore = CountLines(before);
         int linesAfter = CountLines(after);
 
         return $"len={before?.Length ?? 0}->{after?.Length ?? 0} " +
                $"lines={linesBefore}->{linesAfter} " +
-               $"containers={(stripped.Count == 0 ? "none" : string.Join("+", stripped))}";
+               $"containers={(stripped.Count == 0 ? "none" : string.Join("+", stripped))} " +
+               $"mode={mode}";
     }
 
     private static int CountLines(string? text)

@@ -191,12 +191,23 @@ try {
 
     # 這是 2026-10-12 之前的缺口：只有失敗會寫永久 log，工具正常工作時
     # 一點痕跡都不留，使用者無從得知它幫上忙了沒有。
-    Assert-State 'observable: log 記下成功清洗（長度、行數、容器）' `
-        ([bool]($lines -match 'cleaned: len=\d+->\d+ lines=\d+->\d+ containers=Fence')) `
+    Assert-State 'observable: log 記下成功清洗（長度、行數、容器、模式）' `
+        ([bool]($lines -match 'cleaned: len=\d+->\d+ lines=\d+->\d+ containers=Fence mode=SmartContinuation')) `
         "log 沒有成功清洗的記錄：$($lines -join ' | ')"
 
     Assert-State 'observable: log 不含剪貼簿內容' `
         (-not ($lines -match 'echo one')) 'log 洩漏了剪貼簿內容'
+
+    # 模式必須記在「沒有改變」的路徑上，因為那才是判斷該用哪個模式的對照組：
+    # 一行沒被動到的複製，證明另一種模式也沒事可做。
+    $before = Restart-TestTray -autoMonitor $true -mode 0
+    $lines = Get-NewLogLines $before
+    $actual = Set-AndReadClipboard $twoCommands
+    $lines = Get-NewLogLines $before
+
+    Assert-State 'observable: 不需清洗時也記下模式' `
+        ([bool]($lines -match 'clean skipped, no change needed: len=\d+ mode=SmartContinuation')) `
+        "log 沒有記下被跳過的複製：$($lines -join ' | ')"
 
     Write-Host ''
     Write-Host '== 全域熱鍵 ==' -ForegroundColor Cyan

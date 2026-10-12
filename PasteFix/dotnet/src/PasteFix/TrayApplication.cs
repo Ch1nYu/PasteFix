@@ -201,6 +201,11 @@ public sealed class TrayApplication : ApplicationContext
         switch (ClipboardWriteback.Decide(text, cleaned))
         {
             case ClipboardWriteDecision.NothingToDo:
+                // Nothing changed, so this copy wanted no cleaning at all. It is
+                // still the most useful line in the log for the mode question:
+                // it is the control group, the copy that proves the other mode
+                // would have had nothing to do either.
+                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, _settings.Mode)}");
                 Trace("  no change needed (idempotent)");
                 if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
                 return false;
@@ -228,7 +233,7 @@ public sealed class TrayApplication : ApplicationContext
             // alive — so the paste simply goes out uncleaned with no sign of
             // why. Other exception types are still left to that handler, so a
             // genuine bug stays visible instead of being blamed on contention.
-            Program.Log($"clipboard write failed ({ClipboardSummary.Describe(cleaned)}, 0x{ex.HResult:X8}), left uncleaned");
+            Program.Log($"clipboard write failed ({ClipboardSummary.Describe(cleaned, _settings.Mode)}, 0x{ex.HResult:X8}), left uncleaned");
             Trace($"  write failed 0x{ex.HResult:X8}");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿被其他程式佔用，這次沒有清洗", ToolTipIcon.Warning);
             return false;
@@ -238,7 +243,7 @@ public sealed class TrayApplication : ApplicationContext
         _lastClean.Record(text, cleaned);
         // The permanent record of a clean that worked. Until this existed only
         // failures were ever written here, so a working tool left no trace.
-        Program.Log($"cleaned: {ClipboardSummary.Describe(text, cleaned, result.Stripped)}");
+        Program.Log($"cleaned: {ClipboardSummary.Describe(text, cleaned, result.Stripped, _settings.Mode)}");
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
