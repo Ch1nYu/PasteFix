@@ -1,7 +1,7 @@
 # Pastefix Development & Architecture Handoff
 
 > **Target Audience:** Future AI coding agents and human maintainers.  
-> **Last Updated:** 2026-10-12 (v1.4.0 + post-release mode logging)
+> **Last Updated:** 2026-10-28 (v1.5.0)
 > **Repository:** `C:\active\實用小東西\processing\pastefix`
 
 ---
