@@ -107,7 +107,15 @@ public sealed class TrayApplication : ApplicationContext
                     Trace("  clipboard sequence is our own write-back, monitor skips");
                     return;
                 }
-                CleanClipboard(showNotification: false);
+
+                string? owner = ClipboardWriter.ProcessName();
+                MonitorSkip skip = MonitorFilter.Decide(owner, ClipboardWriter.AskedToBeIgnored(), _settings.IgnoredProcesses);
+                if (skip != MonitorSkip.None)
+                {
+                    Program.Log($"monitor skipped: owner={owner ?? "unknown"} reason={skip}");
+                    return;
+                }
+                CleanClipboard(showNotification: false, owner: owner ?? "unknown");
             };
         }
 
@@ -156,7 +164,12 @@ public sealed class TrayApplication : ApplicationContext
         Program.Log($"Hotkey -> {_settings.HotkeyEnabled} (saved to {Settings.FilePath})");
     }
 
-    private bool CleanClipboard(ProcessingMode mode = ProcessingMode.SmartContinuation, bool showNotification = true)
+    /// <param name="owner">
+    /// The writer's process name, for the monitor's log lines. It is how a
+    /// program that borrows the clipboard gets found and added to
+    /// IgnoredProcesses. Manual cleans pass none.
+    /// </param>
+    private bool CleanClipboard(ProcessingMode mode = ProcessingMode.SmartContinuation, bool showNotification = true, string? owner = null)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
@@ -179,7 +192,7 @@ public sealed class TrayApplication : ApplicationContext
                 // still the most useful line in the log for the mode question:
                 // it is the control group, the copy that proves the other mode
                 // would have had nothing to do either.
-                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, mode)}");
+                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, mode)}{OwnerField(owner)}");
                 Trace("  no change needed (idempotent)");
                 if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
                 return false;
@@ -217,13 +230,15 @@ public sealed class TrayApplication : ApplicationContext
         _lastClean.Record(source, cleaned);
         // The permanent record of a clean that worked. Until this existed only
         // failures were ever written here, so a working tool left no trace.
-        Program.Log($"cleaned: {ClipboardSummary.Describe(source, result, mode)}");
+        Program.Log($"cleaned: {ClipboardSummary.Describe(source, result, mode)}{OwnerField(owner)}");
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
             _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);
         return true;
     }
+
+    private static string OwnerField(string? owner) => owner is null ? "" : $" owner={owner}";
 
     private void RestoreLastClean()
     {

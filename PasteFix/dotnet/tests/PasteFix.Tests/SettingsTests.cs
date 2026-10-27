@@ -59,4 +59,43 @@ public class SettingsTests
         Assert.False(settings.AutoMonitor);
         Assert.False(settings.HotkeyEnabled);
     }
+
+    [Fact]
+    public void LazyTyperIsIgnoredByDefault()
+    {
+        // A settings file from before the list existed gets the default too:
+        // the user who asked for this already runs LazyTyper.
+        Assert.Equal(["LazyTyper"], new Settings().IgnoredProcesses);
+        Assert.Equal(["LazyTyper"], Settings.FromJson("{\"AutoMonitor\":true}").IgnoredProcesses);
+    }
+
+    [Fact]
+    public void IgnoredProcessesRoundTripThroughJson()
+    {
+        var original = new Settings { IgnoredProcesses = ["LazyTyper", "espanso"] };
+
+        Assert.Equal(["LazyTyper", "espanso"], Settings.FromJson(original.ToJson()).IgnoredProcesses);
+    }
+
+    [Fact]
+    public void AnEmptyIgnoredListIsKept()
+    {
+        // Emptying the list is how the user turns the filter off; it must not
+        // come back as the default on the next start.
+        Assert.Empty(Settings.FromJson("{\"IgnoredProcesses\":[]}").IgnoredProcesses);
+    }
+
+    [Fact]
+    public void AnIgnoredListThatIsNotAListFallsBackToTheDefault()
+    {
+        Assert.Equal(["LazyTyper"], Settings.FromJson("{\"IgnoredProcesses\":\"LazyTyper\"}").IgnoredProcesses);
+    }
+
+    [Fact]
+    public void EntriesThatAreNotNamesAreDropped()
+    {
+        Assert.Equal(
+            ["LazyTyper"],
+            Settings.FromJson("{\"IgnoredProcesses\":[\"LazyTyper\", 3, \"  \", null]}").IgnoredProcesses);
+    }
 }

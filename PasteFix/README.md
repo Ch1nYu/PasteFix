@@ -31,6 +31,15 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 
 The key is registered with `RegisterHotKey`, which asks Windows to notify Pastefix when the combination is pressed. It does not send keystrokes and does not hook the keyboard.
 
+### Programs That Borrow the Clipboard
+
+Some programs put text on the clipboard only to paste it, then put the previous content back — dictation tools such as LazyTyper do this for every sentence. Those writes are not copies you made, so the monitor leaves them alone:
+
+- a write tagged with the Windows convention `ExcludeClipboardContentFromMonitorProcessing` (or `Clipboard Viewer Ignore`) is never cleaned;
+- a write from a program listed in `IgnoredProcesses` in `settings.json` is never cleaned. The default list is `["LazyTyper"]`; an empty list turns this off.
+
+Each log line from the monitor ends with `owner=<process name>` (never content), and a skipped write is logged as `monitor skipped: owner=… reason=…`. If a program keeps showing up where you did not copy anything, add its `owner=` name to the list. Manual cleans — **立即清洗**, the hotkey, **壓成單行（這一次）** — are never filtered.
+
 ### Single Line, One Copy at a Time
 
 Every copy is cleaned with **Smart Continuation**, which keeps structured multi-line content and joins recognized shell continuations. When one particular copy should be a single line, choose **壓成單行（這一次）** from the tray menu: it trims each physical line of that copy and joins every non-empty line with one space. The next copy is cleaned with Smart Continuation again, so there is no mode to switch back.

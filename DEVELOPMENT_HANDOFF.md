@@ -40,6 +40,12 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
         to skip self-triggered clipboard updates)
                       │
                       ▼
+       MonitorFilter.Decide (pure) ← ClipboardWriter (owner process, ignore formats)
+            ├── WriterAskedToBeIgnored → log "monitor skipped", stop
+            ├── IgnoredProcess (Settings.IgnoredProcesses) → log "monitor skipped", stop
+            └── None → clean, log lines end with owner=<process>
+                      │
+                      ▼
        ClipboardTransformer.cs (Mode Dispatcher)
             ├── CharacterNormalizer.Clean (pure)
             │   └── NBSP & space lookalikes → space, zero-width → removed
@@ -83,10 +89,12 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
 | **ClipboardSummary.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardSummary.cs` | Describes clipboard text for the log by length, line counts, containers, and mode only. `pastefix.log` is permanent plain text and passwords get copied too. The mode is recorded on every path — including the skips, which are the control group for the open question in section 5. |
 | **LastClean.cs** | `PasteFix/dotnet/src/PasteFix/LastClean.cs` | Holds the text from before the last successful write-back so one clean can be undone. `SourceFor` hands the one-shot Single Line the original copy while the clipboard still holds the automatic clean, so its undo goes back to what was copied. **In memory only** — a restore file would defeat the `len=N` log rule. |
 | **HotkeyWindow.cs** | `PasteFix/dotnet/src/PasteFix/HotkeyWindow.cs` | Registers one global hotkey (`Ctrl+Alt+Shift+V`) via `RegisterHotKey` and raises `Pressed`. This is not input simulation; see gotcha 1. |
+| **MonitorFilter.cs** | `PasteFix/dotnet/src/PasteFix/MonitorFilter.cs` | Pure. Decides whether the monitor skips an update: the writer tagged it `ExcludeClipboardContentFromMonitorProcessing` / `Clipboard Viewer Ignore`, or the writer's process is in `IgnoredProcesses` (case-insensitive, `.exe` optional). An unknown writer is cleaned. Manual cleans never consult it. |
+| **ClipboardWriter.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardWriter.cs` | Win32 only: `GetClipboardOwner` → process name, and `IsClipboardFormatAvailable` for the ignore formats. Neither opens the clipboard, so neither can fail with `CLIPBRD_E_CANT_OPEN`. |
 | **OwnWriteGate.cs** | `PasteFix/dotnet/src/PasteFix/OwnWriteGate.cs` | Remembers the Win32 `GetClipboardSequenceNumber()` when Pastefix writes back to the clipboard, preventing infinite loop re-entry. |
 | **MessageWindow.cs**| `PasteFix/dotnet/src/PasteFix/MessageWindow.cs`| Hidden `NativeWindow` that registers `AddClipboardFormatListener` to receive `WM_CLIPBOARDUPDATE`. |
 | **TrayApplication.cs**| `PasteFix/dotnet/src/PasteFix/TrayApplication.cs`| WinForms `ApplicationContext` managing system tray icon, context menu, 300ms debounce timer, and clean orchestration. |
-| **Settings.cs** | `PasteFix/dotnet/src/PasteFix/Settings.cs` | JSON serialization for `%APPDATA%\PasteFix\settings.json` (`AutoMonitor`, `HotkeyEnabled`). Every property is validated in `FromJson`; anything missing or invalid falls back to the default rather than throwing, so an old settings file always loads. The `Mode` key that files before v1.5 carry is ignored. |
+| **Settings.cs** | `PasteFix/dotnet/src/PasteFix/Settings.cs` | JSON serialization for `%APPDATA%\PasteFix\settings.json` (`AutoMonitor`, `HotkeyEnabled`, `IgnoredProcesses` — default `["LazyTyper"]`, an empty list is kept as the user's choice). Every property is validated in `FromJson`; anything missing or invalid falls back to the default rather than throwing, so an old settings file always loads. The `Mode` key that files before v1.5 carry is ignored. |
 
 ---
 
@@ -147,7 +155,7 @@ Always run all test gates before publishing or merging:
 ```powershell
 dotnet test PasteFix/dotnet/PasteFix.slnx -c Release --no-restore
 ```
-- Target: 173 tests covering invisible-character fixes, Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
+- Target: 187 tests covering the monitor filter, invisible-character fixes, Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
 
 ### 2. Automated Machine Smoke Test
 ```powershell
@@ -159,7 +167,7 @@ pwsh -NoProfile -File tools\manual-test.ps1
 ```powershell
 pwsh -NoProfile -File tools\toggle-test.ps1
 ```
-- Covers AutoMonitor off, Smart Continuation, a pre-v1.5 `Mode=1` settings file no longer flattening automatic cleans, the successful-clean log line (sizes, counts, and mode — never content), the mode recorded on a copy that needed no cleaning, and hotkey registration. Restores `settings.json`, the clipboard, and the original tray process on exit.
+- Covers AutoMonitor off, Smart Continuation, a pre-v1.5 `Mode=1` settings file no longer flattening automatic cleans, an update tagged `ExcludeClipboardContentFromMonitorProcessing` left uncleaned and logged as `monitor skipped`, the `owner=` field, the successful-clean log line (sizes, counts, and mode — never content), the mode recorded on a copy that needed no cleaning, and hotkey registration. Restores `settings.json`, the clipboard, and the original tray process on exit.
 
 ### 4. Tray Menu End-to-End Test
 ```powershell

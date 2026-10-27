@@ -5,7 +5,8 @@ AutoMonitor 與自動清洗的 runtime 回歸測試。
   - AutoMonitor 關閉時不改動剪貼簿。
   - SmartContinuation 保留兩條獨立指令的換行。
   - 舊版存了 Mode=1（強制單行）的 settings.json，不再讓自動清洗壓成單行。
-  - 成功的清洗會在永久 log 留下長度、行數與容器（不寫內容）。
+  - 成功的清洗會在永久 log 留下長度、行數與容器（不寫內容），以及寫入者的程序名稱。
+  - 寫入時標了 ExcludeClipboardContentFromMonitorProcessing 的剪貼簿不被清洗。
   - 全域熱鍵依設定註冊或保持關閉。
 
 腳本結束時會還原完整 settings.json、文字剪貼簿內容，以及原本執行中的
@@ -186,6 +187,33 @@ try {
     Assert-State 'observable: 不需清洗時也記下模式' `
         ([bool]($lines -match 'clean skipped, no change needed: len=\d+ mode=SmartContinuation')) `
         "log 沒有記下被跳過的複製：$($lines -join ' | ')"
+
+    # 寫入者的程序名稱是找出「借用剪貼簿的程式」、把它加進 IgnoredProcesses 的依據。
+    # 沒有 owner 視窗的寫入記為 owner=unknown，也算通過。
+    Assert-State 'observable: log 記下寫入者' `
+        ([bool]($lines -match 'clean skipped, no change needed: len=\d+ mode=SmartContinuation owner=\S+')) `
+        "log 沒有 owner 欄位：$($lines -join ' | ')"
+
+    Write-Host ''
+    Write-Host '== 借用剪貼簿的程式 ==' -ForegroundColor Cyan
+    # LazyTyper 這類程式把文字放上剪貼簿、貼上、再放回原內容。這裡模擬一個
+    # 照 Windows 慣例標了 ExcludeClipboardContentFromMonitorProcessing 的寫入。
+    $before = Restart-TestTray -autoMonitor $true -mode 0
+    Add-Type -AssemblyName System.Windows.Forms
+    $indented = "    echo one`n    echo two"
+    $data = New-Object System.Windows.Forms.DataObject
+    $data.SetText($indented)
+    $data.SetData('ExcludeClipboardContentFromMonitorProcessing', [System.IO.MemoryStream]::new([byte[]](0, 0, 0, 0)))
+    [System.Windows.Forms.Clipboard]::SetDataObject($data, $true)
+    Start-Sleep -Milliseconds 1200
+    $actual = Get-Clipboard -Raw
+    $lines = Get-NewLogLines $before
+
+    Assert-State 'borrowed: 標了 Exclude 格式的寫入不被清洗' ($actual -eq $indented) `
+        "預期 [$($indented -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
+    Assert-State 'borrowed: log 記下跳過原因' `
+        ([bool]($lines -match 'monitor skipped: owner=\S+ reason=WriterAskedToBeIgnored')) `
+        "log 沒有跳過記錄：$($lines -join ' | ')"
 
     Write-Host ''
     Write-Host '== 全域熱鍵 ==' -ForegroundColor Cyan
