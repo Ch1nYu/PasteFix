@@ -63,4 +63,23 @@ public class ClipboardTransformerTests
         Assert.Equal("echo one echo two", result.Text);
         Assert.Equal([ContainerKind.Fence], result.Stripped);
     }
+
+    [Fact]
+    public void InvisibleCharactersAreFixedBeforeTheWrapperIsLookedFor()
+    {
+        // A prompt indented with no-break spaces is still a prompt.
+        const string input = "\u00A0$ echo one\n\u00A0$ echo two";
+
+        ClipboardResult result = ClipboardTransformer.Transform(input, ProcessingMode.SmartContinuation);
+
+        Assert.Equal("echo one\necho two", result.Text);
+        Assert.Equal([ContainerKind.Prompt], result.Stripped);
+        Assert.Equal(2, result.CharactersFixed);
+    }
+
+    [Fact]
+    public void ACopyWithNothingInvisibleReportsNoCharacterFixes()
+    {
+        Assert.Equal(0, ClipboardTransformer.Transform("echo one", ProcessingMode.SmartContinuation).CharactersFixed);
+    }
 }

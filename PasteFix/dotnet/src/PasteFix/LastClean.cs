@@ -25,6 +25,14 @@ public sealed class LastClean
     /// </summary>
     public bool StillOnClipboard(string? current) => _before is not null && _after == current;
 
+    /// <summary>
+    /// The text a clean should start from. While the clipboard still holds
+    /// this clean's result, that is the original copy: flattening it, rather
+    /// than the Smart Continuation output already on the clipboard, keeps the
+    /// undo pointing at what the user actually copied.
+    /// </summary>
+    public string SourceFor(string current) => StillOnClipboard(current) ? _before! : current;
+
     public void Record(string before, string after)
     {
         _before = before;

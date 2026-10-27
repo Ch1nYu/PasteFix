@@ -1,12 +1,12 @@
 <#
-AutoMonitor 與處理模式的 runtime 回歸測試。
+AutoMonitor 與自動清洗的 runtime 回歸測試。
 
 驗證：
   - AutoMonitor 關閉時不改動剪貼簿。
   - SmartContinuation 保留兩條獨立指令的換行。
-  - SingleLine 將兩條指令壓成一行。
-  - SingleLine 模式在重新啟動後仍會保留。
-  - 成功的清洗會在永久 log 留下長度、行數與容器（不寫內容）。
+  - 舊版存了 Mode=1（強制單行）的 settings.json，不再讓自動清洗壓成單行。
+  - 成功的清洗會在永久 log 留下長度、行數與容器（不寫內容），以及寫入者的程序名稱。
+  - 寫入時標了 ExcludeClipboardContentFromMonitorProcessing 的剪貼簿不被清洗。
   - 全域熱鍵依設定註冊或保持關閉。
 
 腳本結束時會還原完整 settings.json、文字剪貼簿內容，以及原本執行中的
@@ -55,7 +55,6 @@ $originalProcessPaths = @(
 )
 
 $twoCommands = "echo one`necho two"
-$singleLine = 'echo one echo two'
 
 $pass = 0
 $fail = 0
@@ -89,11 +88,6 @@ function Start-TestTray {
 function Restart-TestTray([bool]$autoMonitor, [int]$mode, [bool]$hotkey = $false) {
     Stop-PasteFix
     Write-TestSettings -autoMonitor $autoMonitor -mode $mode -hotkey $hotkey
-    return Start-TestTray
-}
-
-function Restart-TestTrayWithExistingSettings {
-    Stop-PasteFix
     return Start-TestTray
 }
 
@@ -147,31 +141,16 @@ try {
         "預期 [$($twoCommands -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
 
     Write-Host ''
-    Write-Host '== SingleLine ==' -ForegroundColor Cyan
+    Write-Host '== 舊設定 Mode=1 ==' -ForegroundColor Cyan
+    # v1.4 以前強制單行是會一直開著的模式，存成 Mode=1。現在單行是選單上的一次性
+    # 動作（由 verify-v14.ps1 驗證），舊檔案裡的 Mode 必須被忽略。
     $before = Restart-TestTray -autoMonitor $true -mode 1
     $lines = Get-NewLogLines $before
     $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
 
-    Assert-State 'single-line: 啟用了剪貼簿監聽' `
-        ([bool]($lines -match 'clipboard listener on ok=True')) '啟動記錄裡沒有成功註冊監聽'
-
     $actual = Set-AndReadClipboard $twoCommands
-    Assert-State 'single-line: 將兩條指令壓成一行' ($actual -eq $singleLine) `
-        "預期 [$singleLine]，實際 [$($actual -replace "`n", ' / ')]"
-
-    Write-Host ''
-    Write-Host '== SingleLine 重啟持久化 ==' -ForegroundColor Cyan
-    $before = Restart-TestTrayWithExistingSettings
-    $lines = Get-NewLogLines $before
-    $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
-
-    $savedSettings = Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json
-    Assert-State 'restart: settings 仍為 SingleLine' ($savedSettings.Mode -eq 1) `
-        "預期 Mode=1，實際 Mode=$($savedSettings.Mode)"
-
-    $actual = Set-AndReadClipboard $twoCommands
-    Assert-State 'restart: SingleLine 行為仍生效' ($actual -eq $singleLine) `
-        "預期 [$singleLine]，實際 [$($actual -replace "`n", ' / ')]"
+    Assert-State 'legacy: Mode=1 不再讓自動清洗壓成單行' ($actual -eq $twoCommands) `
+        "預期 [$($twoCommands -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
 
     Write-Host ''
     Write-Host '== 可觀察性：成功清洗會留下永久記錄 ==' -ForegroundColor Cyan
@@ -208,6 +187,33 @@ try {
     Assert-State 'observable: 不需清洗時也記下模式' `
         ([bool]($lines -match 'clean skipped, no change needed: len=\d+ mode=SmartContinuation')) `
         "log 沒有記下被跳過的複製：$($lines -join ' | ')"
+
+    # 寫入者的程序名稱是找出「借用剪貼簿的程式」、把它加進 IgnoredProcesses 的依據。
+    # 沒有 owner 視窗的寫入記為 owner=unknown，也算通過。
+    Assert-State 'observable: log 記下寫入者' `
+        ([bool]($lines -match 'clean skipped, no change needed: len=\d+ mode=SmartContinuation owner=\S+')) `
+        "log 沒有 owner 欄位：$($lines -join ' | ')"
+
+    Write-Host ''
+    Write-Host '== 借用剪貼簿的程式 ==' -ForegroundColor Cyan
+    # LazyTyper 這類程式把文字放上剪貼簿、貼上、再放回原內容。這裡模擬一個
+    # 照 Windows 慣例標了 ExcludeClipboardContentFromMonitorProcessing 的寫入。
+    $before = Restart-TestTray -autoMonitor $true -mode 0
+    Add-Type -AssemblyName System.Windows.Forms
+    $indented = "    echo one`n    echo two"
+    $data = New-Object System.Windows.Forms.DataObject
+    $data.SetText($indented)
+    $data.SetData('ExcludeClipboardContentFromMonitorProcessing', [System.IO.MemoryStream]::new([byte[]](0, 0, 0, 0)))
+    [System.Windows.Forms.Clipboard]::SetDataObject($data, $true)
+    Start-Sleep -Milliseconds 1200
+    $actual = Get-Clipboard -Raw
+    $lines = Get-NewLogLines $before
+
+    Assert-State 'borrowed: 標了 Exclude 格式的寫入不被清洗' ($actual -eq $indented) `
+        "預期 [$($indented -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
+    Assert-State 'borrowed: log 記下跳過原因' `
+        ([bool]($lines -match 'monitor skipped: owner=\S+ reason=WriterAskedToBeIgnored')) `
+        "log 沒有跳過記錄：$($lines -join ' | ')"
 
     Write-Host ''
     Write-Host '== 全域熱鍵 ==' -ForegroundColor Cyan

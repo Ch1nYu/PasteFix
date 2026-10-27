@@ -2,8 +2,9 @@
 # Run: pwsh -NoProfile -File tools\verify-v14.ps1
 #
 # Covers what the unit tests cannot: that the menu is wired to the code, that a
-# real clean leaves a real log line, and that 還原上一次清洗 puts the original
-# text back on the real clipboard.
+# real clean leaves a real log line, that 還原上一次清洗 puts the original
+# text back on the real clipboard, and that 壓成單行（這一次） flattens one copy
+# without the mode sticking.
 
 . (Join-Path $PSScriptRoot 'tray-menu.ps1')
 
@@ -41,7 +42,8 @@ try {
     $names = $items | ForEach-Object { $_.Name }
     Assert-That 'menu shows 還原上一次清洗' ($names -contains '還原上一次清洗')
     Assert-That 'menu shows 全域熱鍵（Ctrl+Alt+Shift+V）' ($names -contains '全域熱鍵（Ctrl+Alt+Shift+V）')
-    Assert-That 'menu still shows the v1.3 items' (($names -contains '立即清洗') -and ($names -contains '全自動監聽') -and ($names -contains '處理模式'))
+    Assert-That 'menu still shows the v1.3 items' (($names -contains '立即清洗') -and ($names -contains '全自動監聽'))
+    Assert-That 'menu shows 壓成單行（這一次） instead of 處理模式' (($names -contains '壓成單行（這一次）') -and -not ($names -contains '處理模式'))
 
     Write-Host ''
     Write-Host '== 2. a real clean writes a real log line ==' -ForegroundColor Cyan
@@ -87,6 +89,33 @@ try {
 
     $survivor = Get-Clipboard -Raw
     Assert-That 'the new clipboard content was not overwritten' ($survivor -eq 'something else entirely') "actual: $(Show-Text $survivor)"
+
+    Write-Host ''
+    Write-Host '== 5. 壓成單行（這一次） flattens one copy, and only that one ==' -ForegroundColor Cyan
+    $indented = "    echo one`n    echo two"
+    Set-Clipboard -Value $indented
+    Start-Sleep -Milliseconds 1200
+    $smart = Get-Clipboard -Raw
+    Assert-That 'the copy was cleaned by Smart Continuation first' ($smart.Trim() -eq "echo one`necho two") "actual: $(Show-Text $smart)"
+
+    [void](Invoke-TrayMenuItem -ItemName '壓成單行（這一次）')
+    Start-Sleep -Milliseconds 800
+    $flat = Get-Clipboard -Raw
+    Assert-That 'the clipboard holds one line' ($flat -eq 'echo one echo two') "actual: $(Show-Text $flat)"
+
+    $flatLines = @(Get-Content -LiteralPath $log | Select-Object -Skip $originalLogCount)
+    Assert-That 'log records the one-shot as mode=SingleLine' ([bool]($flatLines -match 'cleaned: .* mode=SingleLine')) "new lines: $($flatLines -join ' ;; ')"
+
+    # The undo goes back to what was copied, not to the Smart Continuation result.
+    [void](Invoke-TrayMenuItem -ItemName '還原上一次清洗')
+    Start-Sleep -Milliseconds 800
+    $original = Get-Clipboard -Raw
+    Assert-That 'undo gives back the original copy' ($original -eq $indented) "actual: $(Show-Text $original)"
+
+    Set-Clipboard -Value "echo three`necho four"
+    Start-Sleep -Milliseconds 1200
+    $next = Get-Clipboard -Raw
+    Assert-That 'the next copy keeps its lines' ($next -eq "echo three`necho four") "actual: $(Show-Text $next)"
 }
 catch {
     $failures++

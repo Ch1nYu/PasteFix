@@ -7,7 +7,14 @@ namespace PasteFix;
 public sealed class Settings
 {
     public bool AutoMonitor { get; set; } = true;
-    public ProcessingMode Mode { get; set; } = ProcessingMode.SmartContinuation;
+
+    /// <summary>
+    /// Programs whose clipboard writes the monitor leaves alone, by process name
+    /// (with or without ".exe"). LazyTyper borrows the clipboard to paste
+    /// dictated text, so it is in the default list. An empty list turns the
+    /// filter off.
+    /// </summary>
+    public string[] IgnoredProcesses { get; set; } = ["LazyTyper"];
 
     /// <summary>
     /// Off by default. AutoMonitor already covers the copy-then-paste flow, so
@@ -53,12 +60,16 @@ public sealed class Settings
             settings.AutoMonitor = autoMonitor.GetBoolean();
         }
 
-        if (root.TryGetProperty(nameof(Mode), out JsonElement mode) &&
-            mode.ValueKind == JsonValueKind.Number &&
-            mode.TryGetInt32(out int rawMode) &&
-            Enum.IsDefined((ProcessingMode)rawMode))
+        // Files written before v1.5 also carry "Mode". Single Line is now a
+        // one-shot action rather than a mode that stays on, so it is ignored.
+
+        if (root.TryGetProperty(nameof(IgnoredProcesses), out JsonElement ignored) &&
+            ignored.ValueKind == JsonValueKind.Array)
         {
-            settings.Mode = (ProcessingMode)rawMode;
+            settings.IgnoredProcesses = ignored.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(e.GetString()))
+                .Select(e => e.GetString()!)
+                .ToArray();
         }
 
         if (root.TryGetProperty(nameof(HotkeyEnabled), out JsonElement hotkey) &&

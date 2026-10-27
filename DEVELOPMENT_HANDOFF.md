@@ -1,7 +1,7 @@
 # Pastefix Development & Architecture Handoff
 
 > **Target Audience:** Future AI coding agents and human maintainers.  
-> **Last Updated:** 2026-10-12 (v1.4.0 + post-release mode logging)
+> **Last Updated:** 2026-10-28 (v1.5.0)
 > **Repository:** `C:\active\實用小東西\processing\pastefix`
 
 ---
@@ -13,7 +13,7 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
 ### Core Principles
 1. **Pure Clipboard-In → Clipboard-Out:** Pastefix operates solely on clipboard text updates (`WM_CLIPBOARDUPDATE`). It does **not** intercept keystrokes, does not hook keyboard drivers, and does not simulate virtual key events (`SendInput`).
 2. **Zero Learning Curve:** The user copies with standard `Ctrl+C`, Pastefix cleans the clipboard in the background within 300ms, and the user pastes with standard `Ctrl+V` or mouse right-click into any terminal emulator.
-3. **Explicit Processing Mode:** Smart Continuation remains the safe default. Force Single Line is an explicit, persisted opt-in for flattening every physical line.
+3. **Single Line Is One-Shot:** every automatic clean runs Smart Continuation. Flattening every physical line happens only when the user picks **壓成單行（這一次）** for the copy on the clipboard; nothing is persisted, so there is no wrong mode to be left in.
 4. **No Destructive Guessing in Smart Mode:** Smart mode does **not** strip shell prompts (`$ `, `PS >`), delete comments (`#`), or strip Markdown fences (````).
 5. **Nothing Is Rewritten Without a Visible Trace:** Every clean writes one permanent log line (sizes, line counts, containers, and the mode — never content), including the copies that needed no cleaning. Until v1.4.0 only failures were logged, so a working tool left no evidence it had worked, and there was no way to answer which mode a given copy wanted.
 6. **Every Rewrite Has a Way Back:** A clean that replaced the clipboard can be undone from the tray menu for as long as the clipboard still holds what the clean produced. AutoMonitor had been toggled off eight times before this existed — an automatic action with no undo can only be avoided, not corrected.
@@ -40,7 +40,15 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
         to skip self-triggered clipboard updates)
                       │
                       ▼
+       MonitorFilter.Decide (pure) ← ClipboardWriter (owner process, ignore formats)
+            ├── WriterAskedToBeIgnored → log "monitor skipped", stop
+            ├── IgnoredProcess (Settings.IgnoredProcesses) → log "monitor skipped", stop
+            └── None → clean, log lines end with owner=<process>
+                      │
+                      ▼
        ClipboardTransformer.cs (Mode Dispatcher)
+            ├── CharacterNormalizer.Clean (pure)
+            │   └── NBSP & space lookalikes → space, zero-width → removed
             └── ContainerStripper.Strip (pure)
                 ├── Fence       (``` or ~~~ wrapping the whole copy)
                 ├── Prompt      (PS C:\> / $ / ❯ on every non-blank line, 2+)
@@ -73,17 +81,20 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
 |---|---|---|
 | **Program.cs** | `PasteFix/dotnet/src/PasteFix/Program.cs` | Entry point. Manages `PasteFix_App_SingleInstance_Mutex` to ensure strictly one running instance and handles unhandled exception logging. |
 | **Normalizer.cs** | `PasteFix/dotnet/src/PasteFix/Normalizer.cs` | Pure, fully unit-tested normalization logic (`Dedent` + `Normalize`). 100% deterministic and stateless. Also hosts `SplitLines` and the shared `ScanState` / `ScanLine` quote-and-bracket scanner used by `SingleLineNormalizer`. |
+| **CharacterNormalizer.cs** | `PasteFix/dotnet/src/PasteFix/CharacterNormalizer.cs` | Pure. Replaces space lookalikes (U+00A0, U+2000–200A, U+202F, U+205F) with a space and removes U+200B, U+2060, U+FEFF, U+00AD. Never touches anything visible (curly quotes, dashes, U+3000) or meaningful (ZWJ/ZWNJ). Returns the fix count for `chars=`. |
 | **ContainerStripper.cs** | `PasteFix/dotnet/src/PasteFix/ContainerStripper.cs` | Pure wrapper removal: a markdown fence, a repeated shell prompt, or a line-number gutter. Removes a wrapper only when it provably covers the whole copy; text with no wrapper is returned byte for byte. |
 | **SingleLineNormalizer.cs** | `PasteFix/dotnet/src/PasteFix/SingleLineNormalizer.cs` | Explicitly flattens physical lines and removes only scanner-confirmed `\` or backtick continuation markers. |
-| **ClipboardTransformer.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardTransformer.cs` | Strips the container first, then selects exactly one transformer from the persisted `ProcessingMode`. Returns a `ClipboardResult` (text + which containers were stripped) so the log can report what happened without naming content. |
+| **ClipboardTransformer.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardTransformer.cs` | Fixes invisible characters, strips the container, then selects exactly one transformer from the `ProcessingMode` the caller passes (Smart for every automatic clean, Single Line only for the one-shot menu item). Returns a `ClipboardResult` (text + which containers were stripped + characters fixed) so the log can report what happened without naming content. |
 | **ClipboardWriteback.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardWriteback.cs` | Pure decision on whether the cleaned text replaces the clipboard. Keeps the skip cases testable without a real clipboard. |
 | **ClipboardSummary.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardSummary.cs` | Describes clipboard text for the log by length, line counts, containers, and mode only. `pastefix.log` is permanent plain text and passwords get copied too. The mode is recorded on every path — including the skips, which are the control group for the open question in section 5. |
-| **LastClean.cs** | `PasteFix/dotnet/src/PasteFix/LastClean.cs` | Holds the text from before the last successful write-back so one clean can be undone. **In memory only** — a restore file would defeat the `len=N` log rule. |
+| **LastClean.cs** | `PasteFix/dotnet/src/PasteFix/LastClean.cs` | Holds the text from before the last successful write-back so one clean can be undone. `SourceFor` hands the one-shot Single Line the original copy while the clipboard still holds the automatic clean, so its undo goes back to what was copied. **In memory only** — a restore file would defeat the `len=N` log rule. |
 | **HotkeyWindow.cs** | `PasteFix/dotnet/src/PasteFix/HotkeyWindow.cs` | Registers one global hotkey (`Ctrl+Alt+Shift+V`) via `RegisterHotKey` and raises `Pressed`. This is not input simulation; see gotcha 1. |
+| **MonitorFilter.cs** | `PasteFix/dotnet/src/PasteFix/MonitorFilter.cs` | Pure. Decides whether the monitor skips an update: the writer tagged it `ExcludeClipboardContentFromMonitorProcessing` / `Clipboard Viewer Ignore`, or the writer's process is in `IgnoredProcesses` (case-insensitive, `.exe` optional). An unknown writer is cleaned. Manual cleans never consult it. |
+| **ClipboardWriter.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardWriter.cs` | Win32 only: `GetClipboardOwner` → process name, and `IsClipboardFormatAvailable` for the ignore formats. Neither opens the clipboard, so neither can fail with `CLIPBRD_E_CANT_OPEN`. |
 | **OwnWriteGate.cs** | `PasteFix/dotnet/src/PasteFix/OwnWriteGate.cs` | Remembers the Win32 `GetClipboardSequenceNumber()` when Pastefix writes back to the clipboard, preventing infinite loop re-entry. |
 | **MessageWindow.cs**| `PasteFix/dotnet/src/PasteFix/MessageWindow.cs`| Hidden `NativeWindow` that registers `AddClipboardFormatListener` to receive `WM_CLIPBOARDUPDATE`. |
 | **TrayApplication.cs**| `PasteFix/dotnet/src/PasteFix/TrayApplication.cs`| WinForms `ApplicationContext` managing system tray icon, context menu, 300ms debounce timer, and clean orchestration. |
-| **Settings.cs** | `PasteFix/dotnet/src/PasteFix/Settings.cs` | JSON serialization for `%APPDATA%\PasteFix\settings.json` (`AutoMonitor`, `Mode`, `HotkeyEnabled`). Every property is validated in `FromJson`; anything missing or invalid falls back to the default rather than throwing, so an old settings file always loads. |
+| **Settings.cs** | `PasteFix/dotnet/src/PasteFix/Settings.cs` | JSON serialization for `%APPDATA%\PasteFix\settings.json` (`AutoMonitor`, `HotkeyEnabled`, `IgnoredProcesses` — default `["LazyTyper"]`, an empty list is kept as the user's choice). Every property is validated in `FromJson`; anything missing or invalid falls back to the default rather than throwing, so an old settings file always loads. The `Mode` key that files before v1.5 carry is ignored. |
 
 ---
 
@@ -109,10 +120,10 @@ Future agents **MUST** review these design decisions before proposing changes:
 ### ⚠️ Gotcha 4: Self-Triggered Clipboard Re-Entry
 - **Rule:** Do not rely on string equality or unhooking listeners to prevent self-triggering loops. Use Win32 `GetClipboardSequenceNumber()` via `OwnWriteGate`.
 
-### ⚠️ Gotcha 5: Processing Modes Must Stay Isolated
-- `AutoMonitor` controls whether clipboard updates are processed. `ProcessingMode` controls which transformer handles the text.
-- `ClipboardTransformer.Transform` must call exactly one transformer. Never run Smart Continuation before or after Force Single Line.
-- Force Single Line intentionally destroys multi-line structure. Keep it opt-in and keep Smart Continuation as the upgrade-safe default.
+### ⚠️ Gotcha 5: Single Line Must Stay One-Shot and Isolated
+- `AutoMonitor` controls whether clipboard updates are processed. `ProcessingMode` is a parameter of one clean, not a setting: automatic cleans always pass Smart Continuation.
+- `ClipboardTransformer.Transform` must call exactly one transformer. Never run Smart Continuation before or after Force Single Line — the one-shot flattens `LastClean.SourceFor`, the original copy, not the Smart result.
+- **Do not bring back a persisted Single Line mode.** Until v1.5 it was one, and the user switched it 32 times in a month, five round trips within a minute; it ran for 13 of 1025 logged copies. A mode that stays on is a wrong mode waiting to be forgotten.
 
 ### ⚠️ Gotcha 6: `Clipboard.SetText` Rejects Empty Text, and `Application.ThreadException` Hides Every Failure
 
@@ -144,7 +155,7 @@ Always run all test gates before publishing or merging:
 ```powershell
 dotnet test PasteFix/dotnet/PasteFix.slnx -c Release --no-restore
 ```
-- Target: 150 tests covering Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
+- Target: 187 tests covering the monitor filter, invisible-character fixes, Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
 
 ### 2. Automated Machine Smoke Test
 ```powershell
@@ -156,14 +167,14 @@ pwsh -NoProfile -File tools\manual-test.ps1
 ```powershell
 pwsh -NoProfile -File tools\toggle-test.ps1
 ```
-- Covers AutoMonitor off, both processing modes, mode persistence across a restart, the successful-clean log line (sizes, counts, and mode — never content), the mode recorded on a copy that needed no cleaning, and hotkey registration. Restores `settings.json`, the clipboard, and the original tray process on exit.
+- Covers AutoMonitor off, Smart Continuation, a pre-v1.5 `Mode=1` settings file no longer flattening automatic cleans, an update tagged `ExcludeClipboardContentFromMonitorProcessing` left uncleaned and logged as `monitor skipped`, the `owner=` field, the successful-clean log line (sizes, counts, and mode — never content), the mode recorded on a copy that needed no cleaning, and hotkey registration. Restores `settings.json`, the clipboard, and the original tray process on exit.
 
 ### 4. Tray Menu End-to-End Test
 ```powershell
 pwsh -NoProfile -File tools\verify-v14.ps1
 ```
 - Drives the real tray menu through `tools\tray-menu.ps1` (posts the `NotifyIcon` callback message, then uses UI Automation to invoke an item — no `SendInput`, no mouse coordinates, no keyboard hook).
-- Verifies what unit tests cannot: the menu is actually wired to the code, a real clean writes a real `cleaned:` line, **還原上一次清洗** puts the original text back, the restore is single-shot, and it refuses to overwrite content copied since the clean.
+- Verifies what unit tests cannot: the menu is actually wired to the code, a real clean writes a real `cleaned:` line, **還原上一次清洗** puts the original text back, the restore is single-shot, and it refuses to overwrite content copied since the clean; **壓成單行（這一次）** flattens one copy, logs `mode=SingleLine`, undoes to the original copy, and leaves the next copy multi-line.
 - Requires the tray to be running. If it reports that the menu never appeared, check `Get-Process PasteFix` first — a stale or absent process is the usual cause, not the helper.
 
 ### 5. Check the Log for Swallowed Exceptions
@@ -193,28 +204,17 @@ Start-Process "PasteFix\dist\PasteFix.exe" -WindowStyle Hidden
 - **Keep Dependencies at Zero:** Do not add third-party NuGet packages unless strictly necessary. The project uses standard .NET 10 runtime libraries.
 - **Preserve .gitattributes:** Ensure `.gitattributes` maintains `linguist-vendored` for `PasteFix/legacy/**` and `tools/**` so GitHub language statistics reflect 100% C#.
 
-### Open Question: Should the Two Modes Be Merged?
+### Settled (v1.5): Single Line Became a One-Shot Action
 
-Do not merge `SmartContinuation` and `SingleLine` without evidence. The log now provides it, and nothing else does.
+The open question was whether Smart Continuation and Single Line should be merged, and it was to be answered with two weeks of `mode=` log lines rather than a guess. The answer, 2026-10-27:
 
-**Why they are separate:** they are not interchangeable. Smart Continuation rejoins marked continuations and leaves everything else alone; Single Line collapses every physical line and is deliberately destructive to Python, YAML, and heredocs. The user switched between them **32 times between 2026-09-07 and 2026-10-07 — 16 in and 16 out**, five of those round trips within a single minute, which means the switch is usually correcting a wrong mode rather than expressing a lasting preference. The longest Single Line stretch was 1 day 6 hours, so it is not a mode that should never be used.
+| | lines |
+|---|---|
+| SmartContinuation skipped | 937 |
+| SmartContinuation cleaned | 75 |
+| SingleLine cleaned | 8 |
+| SingleLine skipped | 5 |
 
-**The prerequisite is data, not design.** Merging on a guess would replace 32 human judgements with an untested heuristic — exactly the class of change that caused the 2026-08-08 incident. There is no data yet: before `334d377`, no log line said which mode ran, so the 32 switches have no matching record of what the copies actually needed. The two weeks of evidence start from the first `mode=` line, not from the switches.
+Single Line ran for 13 of 1025 copies. Together with the 32 switches (five round trips within a minute), that says the need was "this copy, flattened", not "every copy from now on". So the modes were not merged by a heuristic: the persisted mode was removed and Single Line became the menu item **壓成單行（這一次）**. See `docs/records/WORKLOG-2026-10-27.md`.
 
-**What to read when the data has accumulated:** every permanent log line from a build that carries `mode=` records it, including the path that changed nothing. The skipped copies are the control group.
-
-```
-cleaned: len=17->17 lines=2->1 containers=none mode=SingleLine
-cleaned: len=29->17 lines=4->2 containers=Fence mode=SmartContinuation
-clean skipped, no change needed: len=41 mode=SmartContinuation
-```
-
-`lines=A->B` is the discriminator: `2->1` is a copy that needed collapsing, `4->4` is one that was already fine, and a skip is one neither mode would touch. Count the ratio, then decide.
-
-```powershell
-Get-Content "$env:APPDATA\PasteFix\pastefix.log" |
-  Select-String 'mode=SingleLine|clean skipped' |
-  Select-Object -Last 100
-```
-
-**Before counting, check the build.** `git show v1.4.0:PasteFix/dotnet/src/PasteFix/ClipboardSummary.cs` contains no `mode=`; the field arrived in `334d377`, which is on `main` inside no release. The `v1.4.0` GitHub asset is `1.4.0+65e04c7` and also lacks it. Only lines from a build reporting a version at or after `334d377` are usable evidence.
+About a third of logged copies come from LazyTyper, a dictation tool that borrows the clipboard to paste and then restores it (a pair of events about 0.72 s apart). Read skip counts with that in mind.

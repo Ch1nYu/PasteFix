@@ -103,4 +103,31 @@ public class LastCleanTests
         Assert.False(lastClean.CanRestore);
         Assert.False(lastClean.StillOnClipboard(""));
     }
+
+    [Fact]
+    public void AClipboardStillHoldingTheCleanIsWorkedFromTheOriginalCopy()
+    {
+        // AutoMonitor has already run Smart Continuation by the time the user
+        // asks for a single line. Flattening the original copy rather than that
+        // result means the undo afterwards gives back what was actually copied.
+        var lastClean = new LastClean();
+        lastClean.Record("    echo one \\\n    --flag", "echo one --flag");
+
+        Assert.Equal("    echo one \\\n    --flag", lastClean.SourceFor("echo one --flag"));
+    }
+
+    [Fact]
+    public void ANewerCopyIsWorkedFromAsItIs()
+    {
+        var lastClean = new LastClean();
+        lastClean.Record("    echo one", "echo one");
+
+        Assert.Equal("echo two", lastClean.SourceFor("echo two"));
+    }
+
+    [Fact]
+    public void WithNoCleanOnRecordTheClipboardIsWorkedFromAsItIs()
+    {
+        Assert.Equal("echo one", new LastClean().SourceFor("echo one"));
+    }
 }

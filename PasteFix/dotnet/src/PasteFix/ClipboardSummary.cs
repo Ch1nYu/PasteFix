@@ -30,16 +30,18 @@ public static class ClipboardSummary
     /// copy that needed collapsing; <c>lines=4->4 mode=SmartContinuation</c> is
     /// one that was already fine. Reading those two lines side by side is how
     /// the mode question gets settled with evidence instead of memory.
+    ///
+    /// chars= comes after mode= so every query written against the older lines
+    /// still matches.
     /// </summary>
-    public static string Describe(string? before, string? after, IReadOnlyList<ContainerKind> stripped, ProcessingMode mode)
+    public static string Describe(string? before, ClipboardResult result, ProcessingMode mode)
     {
-        int linesBefore = CountLines(before);
-        int linesAfter = CountLines(after);
+        string after = result.Text;
 
-        return $"len={before?.Length ?? 0}->{after?.Length ?? 0} " +
-               $"lines={linesBefore}->{linesAfter} " +
-               $"containers={(stripped.Count == 0 ? "none" : string.Join("+", stripped))} " +
-               $"mode={mode}";
+        return $"len={before?.Length ?? 0}->{after.Length} " +
+               $"lines={CountLines(before)}->{CountLines(after)} " +
+               $"containers={(result.Stripped.Count == 0 ? "none" : string.Join("+", result.Stripped))} " +
+               $"mode={mode} chars={result.CharactersFixed}";
     }
 
     private static int CountLines(string? text)

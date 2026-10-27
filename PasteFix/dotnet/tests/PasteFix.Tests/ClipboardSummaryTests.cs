@@ -35,11 +35,10 @@ public class ClipboardSummaryTests
     {
         string summary = ClipboardSummary.Describe(
             "    echo one\n    echo two",
-            "echo one\necho two",
-            [],
+            new ClipboardResult("echo one\necho two", [], 0),
             ProcessingMode.SmartContinuation);
 
-        Assert.Equal("len=25->17 lines=2->2 containers=none mode=SmartContinuation", summary);
+        Assert.Equal("len=25->17 lines=2->2 containers=none mode=SmartContinuation chars=0", summary);
     }
 
     [Fact]
@@ -47,11 +46,10 @@ public class ClipboardSummaryTests
     {
         string summary = ClipboardSummary.Describe(
             "a",
-            "b",
-            [ContainerKind.Fence, ContainerKind.Prompt],
+            new ClipboardResult("b", [ContainerKind.Fence, ContainerKind.Prompt], 0),
             ProcessingMode.SmartContinuation);
 
-        Assert.EndsWith("containers=Fence+Prompt mode=SmartContinuation", summary);
+        Assert.EndsWith("containers=Fence+Prompt mode=SmartContinuation chars=0", summary);
     }
 
     [Fact]
@@ -62,11 +60,10 @@ public class ClipboardSummaryTests
         // four is a SmartContinuation one.
         string summary = ClipboardSummary.Describe(
             "echo one\necho two\necho three\necho four",
-            "echo one echo two echo three echo four",
-            [],
+            new ClipboardResult("echo one echo two echo three echo four", [], 0),
             ProcessingMode.SingleLine);
 
-        Assert.Equal("len=38->38 lines=4->1 containers=none mode=SingleLine", summary);
+        Assert.Equal("len=38->38 lines=4->1 containers=none mode=SingleLine chars=0", summary);
     }
 
     [Fact]
@@ -82,8 +79,7 @@ public class ClipboardSummaryTests
     {
         string summary = ClipboardSummary.Describe(
             "hunter2 is my password",
-            "hunter2 is my password",
-            [],
+            new ClipboardResult("hunter2 is my password", [], 0),
             ProcessingMode.SmartContinuation);
 
         Assert.DoesNotContain("hunter2", summary);
@@ -94,7 +90,20 @@ public class ClipboardSummaryTests
     public void DescribeForACleanHandlesMissingText()
     {
         Assert.Equal(
-            "len=0->0 lines=0->0 containers=none mode=SmartContinuation",
-            ClipboardSummary.Describe(null, null, [], ProcessingMode.SmartContinuation));
+            "len=0->0 lines=0->0 containers=none mode=SmartContinuation chars=0",
+            ClipboardSummary.Describe(null, new ClipboardResult("", [], 0), ProcessingMode.SmartContinuation));
+    }
+
+    [Fact]
+    public void DescribeForACleanCountsTheCharactersFixedAfterTheMode()
+    {
+        // chars= goes after mode= so every query written against the older
+        // lines still matches.
+        string summary = ClipboardSummary.Describe(
+            "git\u00A0commit",
+            new ClipboardResult("git commit", [], 1),
+            ProcessingMode.SmartContinuation);
+
+        Assert.Equal("len=10->10 lines=1->1 containers=none mode=SmartContinuation chars=1", summary);
     }
 }
