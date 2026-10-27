@@ -2,46 +2,20 @@ namespace PasteFix.Tests;
 
 public class SettingsTests
 {
-    [Fact]
-    public void LegacyJsonDefaultsToSmartModeWithoutChangingAutoMonitor()
+    [Theory]
+    [InlineData("{\"AutoMonitor\":false,\"Mode\":1}")]       // v1.3.0, Force Single Line saved
+    [InlineData("{\"AutoMonitor\":false,\"Mode\":0}")]       // v1.3.0, Smart Continuation saved
+    [InlineData("{\"AutoMonitor\":false,\"Mode\":\"x\"}")]   // a hand-edited file
+    public void ASettingsFileThatStillHasAModeLoadsWithoutIt(string json)
     {
-        Settings settings = Settings.FromJson("{\"AutoMonitor\":false}");
+        // Single Line is no longer a mode that stays on — it was switched 32
+        // times in a month, often back within a minute, and ran for 13 of 1025
+        // copies. A file written before that change must still load, and the
+        // saved mode must not come back on through the side door.
+        Settings settings = Settings.FromJson(json);
 
         Assert.False(settings.AutoMonitor);
-        Assert.Equal(ProcessingMode.SmartContinuation, settings.Mode);
-    }
-
-    [Fact]
-    public void UnknownModeFallsBackToSmartWithoutChangingAutoMonitor()
-    {
-        Settings settings = Settings.FromJson("{\"AutoMonitor\":false,\"Mode\":999}");
-
-        Assert.False(settings.AutoMonitor);
-        Assert.Equal(ProcessingMode.SmartContinuation, settings.Mode);
-    }
-
-    [Fact]
-    public void SingleLineModeRoundTripsThroughJson()
-    {
-        var original = new Settings
-        {
-            AutoMonitor = false,
-            Mode = ProcessingMode.SingleLine,
-        };
-
-        Settings restored = Settings.FromJson(original.ToJson());
-
-        Assert.False(restored.AutoMonitor);
-        Assert.Equal(ProcessingMode.SingleLine, restored.Mode);
-    }
-
-    [Fact]
-    public void InvalidModeTypeFallsBackToSmartWithoutChangingAutoMonitor()
-    {
-        Settings settings = Settings.FromJson("{\"AutoMonitor\":false,\"Mode\":\"invalid\"}");
-
-        Assert.False(settings.AutoMonitor);
-        Assert.Equal(ProcessingMode.SmartContinuation, settings.Mode);
+        Assert.DoesNotContain("Mode", settings.ToJson());
     }
 
     [Fact]
@@ -69,10 +43,9 @@ public class SettingsTests
     public void InvalidHotkeyTypeFallsBackToOffWithoutChangingTheRest()
     {
         Settings settings = Settings.FromJson(
-            "{\"AutoMonitor\":false,\"Mode\":1,\"HotkeyEnabled\":\"yes\"}");
+            "{\"AutoMonitor\":false,\"HotkeyEnabled\":\"yes\"}");
 
         Assert.False(settings.AutoMonitor);
-        Assert.Equal(ProcessingMode.SingleLine, settings.Mode);
         Assert.False(settings.HotkeyEnabled);
     }
 
@@ -84,7 +57,6 @@ public class SettingsTests
         Settings settings = Settings.FromJson("{\"AutoMonitor\":false,\"Mode\":1}");
 
         Assert.False(settings.AutoMonitor);
-        Assert.Equal(ProcessingMode.SingleLine, settings.Mode);
         Assert.False(settings.HotkeyEnabled);
     }
 }

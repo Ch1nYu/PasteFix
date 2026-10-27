@@ -13,8 +13,6 @@ public sealed class TrayApplication : ApplicationContext
     private readonly HotkeyWindow _hotkeyWindow = new();
     private readonly Settings _settings;
     private readonly ToolStripMenuItem _autoMonitorItem;
-    private readonly ToolStripMenuItem _smartModeItem;
-    private readonly ToolStripMenuItem _singleLineModeItem;
     private readonly ToolStripMenuItem _hotkeyItem;
     private readonly ToolStripMenuItem _restoreItem;
     private readonly OwnWriteGate _ownWriteGate = new();
@@ -30,19 +28,6 @@ public sealed class TrayApplication : ApplicationContext
             Checked = _settings.AutoMonitor,
         };
 
-        _smartModeItem = new ToolStripMenuItem(
-            "智慧續行（現有）",
-            null,
-            (_, _) => SetProcessingMode(ProcessingMode.SmartContinuation));
-        _singleLineModeItem = new ToolStripMenuItem(
-            "強制單行",
-            null,
-            (_, _) => SetProcessingMode(ProcessingMode.SingleLine));
-
-        var processingModeItem = new ToolStripMenuItem("處理模式");
-        processingModeItem.DropDownItems.Add(_smartModeItem);
-        processingModeItem.DropDownItems.Add(_singleLineModeItem);
-
         _hotkeyItem = new ToolStripMenuItem("全域熱鍵（Ctrl+Alt+Shift+V）", null, OnHotkeyToggle)
         {
             CheckOnClick = true,
@@ -53,10 +38,13 @@ public sealed class TrayApplication : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem("立即清洗", null, (_, _) => CleanClipboard()));
+        // Single Line used to be a mode that stayed on. It was switched 32 times
+        // in a month, often back within a minute, and ran for 13 of 1025 copies:
+        // what was wanted was this copy flattened, not every copy after it.
+        menu.Items.Add(new ToolStripMenuItem("壓成單行（這一次）", null, (_, _) => CleanClipboard(ProcessingMode.SingleLine)));
         menu.Items.Add(_restoreItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoMonitorItem);
-        menu.Items.Add(processingModeItem);
         menu.Items.Add(_hotkeyItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => Application.Exit()));
@@ -133,7 +121,6 @@ public sealed class TrayApplication : ApplicationContext
     private void ApplySettings()
     {
         _window.SetClipboardListening(_settings.AutoMonitor);
-        SyncProcessingModeChecks();
 
         _hotkeyWindow.SetHotkey(_settings.HotkeyEnabled);
         if (_settings.HotkeyEnabled && !_hotkeyWindow.Registered)
@@ -169,21 +156,7 @@ public sealed class TrayApplication : ApplicationContext
         Program.Log($"Hotkey -> {_settings.HotkeyEnabled} (saved to {Settings.FilePath})");
     }
 
-    private void SetProcessingMode(ProcessingMode mode)
-    {
-        _settings.Mode = mode;
-        SyncProcessingModeChecks();
-        _settings.Save();
-        Program.Log($"ProcessingMode -> {_settings.Mode} (saved to {Settings.FilePath})");
-    }
-
-    private void SyncProcessingModeChecks()
-    {
-        _smartModeItem.Checked = _settings.Mode == ProcessingMode.SmartContinuation;
-        _singleLineModeItem.Checked = _settings.Mode == ProcessingMode.SingleLine;
-    }
-
-    private bool CleanClipboard(bool showNotification = true)
+    private bool CleanClipboard(ProcessingMode mode = ProcessingMode.SmartContinuation, bool showNotification = true)
     {
         Trace("CleanClipboard enter");
         if (!Clipboard.ContainsText())
@@ -194,7 +167,8 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        ClipboardResult result = ClipboardTransformer.Transform(text, _settings.Mode);
+        string source = _lastClean.SourceFor(text);
+        ClipboardResult result = ClipboardTransformer.Transform(source, mode);
         string cleaned = result.Text;
         Trace($"  cleaned=[{cleaned}]");
 
@@ -205,7 +179,7 @@ public sealed class TrayApplication : ApplicationContext
                 // still the most useful line in the log for the mode question:
                 // it is the control group, the copy that proves the other mode
                 // would have had nothing to do either.
-                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, _settings.Mode)}");
+                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, mode)}");
                 Trace("  no change needed (idempotent)");
                 if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
                 return false;
@@ -233,17 +207,17 @@ public sealed class TrayApplication : ApplicationContext
             // alive — so the paste simply goes out uncleaned with no sign of
             // why. Other exception types are still left to that handler, so a
             // genuine bug stays visible instead of being blamed on contention.
-            Program.Log($"clipboard write failed ({ClipboardSummary.Describe(cleaned, _settings.Mode)}, 0x{ex.HResult:X8}), left uncleaned");
+            Program.Log($"clipboard write failed ({ClipboardSummary.Describe(cleaned, mode)}, 0x{ex.HResult:X8}), left uncleaned");
             Trace($"  write failed 0x{ex.HResult:X8}");
             if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿被其他程式佔用，這次沒有清洗", ToolTipIcon.Warning);
             return false;
         }
 
         _ownWriteGate.MarkOwnWrite(GetClipboardSequenceNumber());
-        _lastClean.Record(text, cleaned);
+        _lastClean.Record(source, cleaned);
         // The permanent record of a clean that worked. Until this existed only
         // failures were ever written here, so a working tool left no trace.
-        Program.Log($"cleaned: {ClipboardSummary.Describe(text, result, _settings.Mode)}");
+        Program.Log($"cleaned: {ClipboardSummary.Describe(source, result, mode)}");
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)

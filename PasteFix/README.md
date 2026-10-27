@@ -31,11 +31,11 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 
 The key is registered with `RegisterHotKey`, which asks Windows to notify Pastefix when the combination is pressed. It does not send keystrokes and does not hook the keyboard.
 
-### Processing Modes
+### Single Line, One Copy at a Time
 
-Choose one mode from the tray's **處理模式** submenu. **Smart Continuation** is the default and preserves structured multi-line content while joining recognized shell continuations. **Force Single Line** trims each physical line and joins every non-empty line with one space.
+Every copy is cleaned with **Smart Continuation**, which keeps structured multi-line content and joins recognized shell continuations. When one particular copy should be a single line, choose **壓成單行（這一次）** from the tray menu: it trims each physical line of that copy and joins every non-empty line with one space. The next copy is cleaned with Smart Continuation again, so there is no mode to switch back.
 
-Force Single Line is intentionally destructive for Python, YAML, here-strings, heredocs, and blocks containing multiple commands. Use Smart Continuation when line structure matters.
+It flattens what you originally copied, not the Smart Continuation result, so **還原上一次清洗** afterwards gives back the original copy. Flattening is intentionally destructive for Python, YAML, here-strings, heredocs, and blocks containing multiple commands.
 
 ---
 

@@ -7,7 +7,6 @@ namespace PasteFix;
 public sealed class Settings
 {
     public bool AutoMonitor { get; set; } = true;
-    public ProcessingMode Mode { get; set; } = ProcessingMode.SmartContinuation;
 
     /// <summary>
     /// Off by default. AutoMonitor already covers the copy-then-paste flow, so
@@ -53,13 +52,8 @@ public sealed class Settings
             settings.AutoMonitor = autoMonitor.GetBoolean();
         }
 
-        if (root.TryGetProperty(nameof(Mode), out JsonElement mode) &&
-            mode.ValueKind == JsonValueKind.Number &&
-            mode.TryGetInt32(out int rawMode) &&
-            Enum.IsDefined((ProcessingMode)rawMode))
-        {
-            settings.Mode = (ProcessingMode)rawMode;
-        }
+        // Files written before v1.5 also carry "Mode". Single Line is now a
+        // one-shot action rather than a mode that stays on, so it is ignored.
 
         if (root.TryGetProperty(nameof(HotkeyEnabled), out JsonElement hotkey) &&
             hotkey.ValueKind is JsonValueKind.True or JsonValueKind.False)

@@ -1,11 +1,10 @@
 <#
-AutoMonitor 與處理模式的 runtime 回歸測試。
+AutoMonitor 與自動清洗的 runtime 回歸測試。
 
 驗證：
   - AutoMonitor 關閉時不改動剪貼簿。
   - SmartContinuation 保留兩條獨立指令的換行。
-  - SingleLine 將兩條指令壓成一行。
-  - SingleLine 模式在重新啟動後仍會保留。
+  - 舊版存了 Mode=1（強制單行）的 settings.json，不再讓自動清洗壓成單行。
   - 成功的清洗會在永久 log 留下長度、行數與容器（不寫內容）。
   - 全域熱鍵依設定註冊或保持關閉。
 
@@ -55,7 +54,6 @@ $originalProcessPaths = @(
 )
 
 $twoCommands = "echo one`necho two"
-$singleLine = 'echo one echo two'
 
 $pass = 0
 $fail = 0
@@ -89,11 +87,6 @@ function Start-TestTray {
 function Restart-TestTray([bool]$autoMonitor, [int]$mode, [bool]$hotkey = $false) {
     Stop-PasteFix
     Write-TestSettings -autoMonitor $autoMonitor -mode $mode -hotkey $hotkey
-    return Start-TestTray
-}
-
-function Restart-TestTrayWithExistingSettings {
-    Stop-PasteFix
     return Start-TestTray
 }
 
@@ -147,31 +140,16 @@ try {
         "預期 [$($twoCommands -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
 
     Write-Host ''
-    Write-Host '== SingleLine ==' -ForegroundColor Cyan
+    Write-Host '== 舊設定 Mode=1 ==' -ForegroundColor Cyan
+    # v1.4 以前強制單行是會一直開著的模式，存成 Mode=1。現在單行是選單上的一次性
+    # 動作（由 verify-v14.ps1 驗證），舊檔案裡的 Mode 必須被忽略。
     $before = Restart-TestTray -autoMonitor $true -mode 1
     $lines = Get-NewLogLines $before
     $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
 
-    Assert-State 'single-line: 啟用了剪貼簿監聽' `
-        ([bool]($lines -match 'clipboard listener on ok=True')) '啟動記錄裡沒有成功註冊監聽'
-
     $actual = Set-AndReadClipboard $twoCommands
-    Assert-State 'single-line: 將兩條指令壓成一行' ($actual -eq $singleLine) `
-        "預期 [$singleLine]，實際 [$($actual -replace "`n", ' / ')]"
-
-    Write-Host ''
-    Write-Host '== SingleLine 重啟持久化 ==' -ForegroundColor Cyan
-    $before = Restart-TestTrayWithExistingSettings
-    $lines = Get-NewLogLines $before
-    $lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
-
-    $savedSettings = Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json
-    Assert-State 'restart: settings 仍為 SingleLine' ($savedSettings.Mode -eq 1) `
-        "預期 Mode=1，實際 Mode=$($savedSettings.Mode)"
-
-    $actual = Set-AndReadClipboard $twoCommands
-    Assert-State 'restart: SingleLine 行為仍生效' ($actual -eq $singleLine) `
-        "預期 [$singleLine]，實際 [$($actual -replace "`n", ' / ')]"
+    Assert-State 'legacy: Mode=1 不再讓自動清洗壓成單行' ($actual -eq $twoCommands) `
+        "預期 [$($twoCommands -replace "`n", ' / ')]，實際 [$($actual -replace "`n", ' / ')]"
 
     Write-Host ''
     Write-Host '== 可觀察性：成功清洗會留下永久記錄 ==' -ForegroundColor Cyan
