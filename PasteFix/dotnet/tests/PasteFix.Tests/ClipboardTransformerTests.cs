@@ -82,44 +82,4 @@ public class ClipboardTransformerTests
     {
         Assert.Equal(0, ClipboardTransformer.Transform("echo one", ProcessingMode.SmartContinuation).CharactersFixed);
     }
-
-    [Fact]
-    public void SingleLineModeKeepsTheStructureOfACodeBlockInAStructuredLanguage()
-    {
-        // Force Single Line is deliberately destructive to Python and YAML. When
-        // the page itself says the copy is one Python block, flattening it can
-        // only break it, so the block goes through Smart Continuation instead.
-        const string input = "def f():\n    return 1";
-
-        ClipboardResult result = ClipboardTransformer.Transform(
-            input, ProcessingMode.SingleLine, new CopySource(SourceKind.Code, "python"));
-
-        Assert.Equal(input, result.Text);
-        Assert.Equal("python", result.StructureGuard);
-    }
-
-    [Theory]
-    [InlineData(SourceKind.Code, "bash")]
-    [InlineData(SourceKind.Code, null)]
-    [InlineData(SourceKind.Mixed, null)]
-    [InlineData(SourceKind.Html, null)]
-    [InlineData(SourceKind.PlainText, null)]
-    public void SingleLineModeStillFlattensEverythingElse(SourceKind kind, string? language)
-    {
-        ClipboardResult result = ClipboardTransformer.Transform(
-            "echo one\necho two", ProcessingMode.SingleLine, new CopySource(kind, language));
-
-        Assert.Equal("echo one echo two", result.Text);
-        Assert.Null(result.StructureGuard);
-    }
-
-    [Fact]
-    public void SmartModeNeverReportsAGuard()
-    {
-        // Smart Continuation already keeps structure; there is nothing to guard.
-        ClipboardResult result = ClipboardTransformer.Transform(
-            "def f():\n    return 1", ProcessingMode.SmartContinuation, new CopySource(SourceKind.Code, "python"));
-
-        Assert.Null(result.StructureGuard);
-    }
 }

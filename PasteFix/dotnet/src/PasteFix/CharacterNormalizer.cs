@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace PasteFix;
@@ -20,13 +21,24 @@ namespace PasteFix;
 /// </summary>
 public static class CharacterNormalizer
 {
+    // Render as an ordinary space: no-break space (what &nbsp; becomes), en quad
+    // through hair space, narrow no-break space, medium mathematical space.
+    private const string SpaceLookalikes =
+        "\u00A0\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F";
+
+    // Render as nothing: zero-width space, word joiner, byte order mark, soft hyphen.
+    private const string Invisible = "\u200B\u2060\uFEFF\u00AD";
+
+    private static readonly SearchValues<char> Spaces = SearchValues.Create(SpaceLookalikes);
+    private static readonly SearchValues<char> Fixable = SearchValues.Create(SpaceLookalikes + Invisible);
+
     /// <summary>
     /// Returns the cleaned text and how many characters were fixed. Text with
     /// nothing to fix is returned as the same instance.
     /// </summary>
     public static (string Text, int Fixed) Clean(string input)
     {
-        int first = IndexOfFix(input);
+        int first = input.AsSpan().IndexOfAny(Fixable);
         if (first < 0) return (input, 0);
 
         var result = new StringBuilder(input.Length);
@@ -36,48 +48,16 @@ public static class CharacterNormalizer
         for (int i = first; i < input.Length; i++)
         {
             char c = input[i];
-            if (IsSpaceLookalike(c))
-            {
-                result.Append(' ');
-                fixedCount++;
-            }
-            else if (IsInvisible(c))
-            {
-                fixedCount++;
-            }
-            else
+            if (!Fixable.Contains(c))
             {
                 result.Append(c);
+                continue;
             }
+
+            fixedCount++;
+            if (Spaces.Contains(c)) result.Append(' ');
         }
 
         return (result.ToString(), fixedCount);
     }
-
-    private static int IndexOfFix(string input)
-    {
-        for (int i = 0; i < input.Length; i++)
-        {
-            if (IsSpaceLookalike(input[i]) || IsInvisible(input[i])) return i;
-        }
-        return -1;
-    }
-
-    private static bool IsSpaceLookalike(char c) => c switch
-    {
-        '\u00A0' => true,                    // no-break space, what &nbsp; becomes
-        >= '\u2000' and <= '\u200A' => true, // en quad … hair space
-        '\u202F' => true,                    // narrow no-break space
-        '\u205F' => true,                    // medium mathematical space
-        _ => false,
-    };
-
-    private static bool IsInvisible(char c) => c switch
-    {
-        '\u200B' => true, // zero-width space
-        '\u2060' => true, // word joiner
-        '\uFEFF' => true, // byte order mark / zero-width no-break space
-        '\u00AD' => true, // soft hyphen
-        _ => false,
-    };
 }

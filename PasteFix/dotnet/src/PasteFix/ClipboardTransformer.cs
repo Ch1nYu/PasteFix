@@ -8,16 +8,11 @@ public enum ProcessingMode
 
 /// <summary>
 /// The outcome of one clipboard transformation: the text to paste, which
-/// wrappers were removed on the way, how many invisible characters were fixed,
-/// and — when Force Single Line was set aside for a structured code block — the
-/// language that caused it. All of it is reported so the caller can say what it
-/// did without ever naming the content.
+/// wrappers were removed on the way, and how many invisible characters were
+/// fixed. Both are reported so the caller can say what it did without ever
+/// naming the content.
 /// </summary>
-public sealed record ClipboardResult(
-    string Text,
-    IReadOnlyList<ContainerKind> Stripped,
-    int CharactersFixed = 0,
-    string? StructureGuard = null);
+public sealed record ClipboardResult(string Text, IReadOnlyList<ContainerKind> Stripped, int CharactersFixed);
 
 public static class ClipboardTransformer
 {
@@ -27,27 +22,18 @@ public static class ClipboardTransformer
     /// indented with no-break spaces is still recognised; the wrapper goes
     /// before the mode because a fence or a prompt gutter is a frame around the
     /// text, and the mode rules should see the text itself.
-    ///
-    /// Force Single Line is deliberately destructive to Python, YAML and the
-    /// like. When the page the copy came from marked it as one block of such a
-    /// language, flattening can only break it, so that block goes through
-    /// Smart Continuation instead and the result names the guard.
     /// </summary>
-    public static ClipboardResult Transform(string input, ProcessingMode mode, CopySource? source = null)
+    public static ClipboardResult Transform(string input, ProcessingMode mode)
     {
         (string chars, int fixedCount) = CharacterNormalizer.Clean(input);
         (string stripped, IReadOnlyList<ContainerKind> kinds) = ContainerStripper.Strip(chars);
 
-        string? guard = mode == ProcessingMode.SingleLine && source is { KeepsLineStructure: true }
-            ? source.Language
-            : null;
-
         string text = mode switch
         {
-            ProcessingMode.SingleLine when guard is null => SingleLineNormalizer.Flatten(stripped),
+            ProcessingMode.SingleLine => SingleLineNormalizer.Flatten(stripped),
             _ => Normalizer.Normalize(stripped),
         };
 
-        return new ClipboardResult(text, kinds, fixedCount, guard);
+        return new ClipboardResult(text, kinds, fixedCount);
     }
 }

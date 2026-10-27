@@ -194,10 +194,9 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         string text = Clipboard.GetText();
-        CopySource source = ReadCopySource();
-        ClipboardResult result = ClipboardTransformer.Transform(text, _settings.Mode, source);
+        ClipboardResult result = ClipboardTransformer.Transform(text, _settings.Mode);
         string cleaned = result.Text;
-        Trace($"  source={source} cleaned=[{cleaned}]");
+        Trace($"  cleaned=[{cleaned}]");
 
         switch (ClipboardWriteback.Decide(text, cleaned))
         {
@@ -206,7 +205,7 @@ public sealed class TrayApplication : ApplicationContext
                 // still the most useful line in the log for the mode question:
                 // it is the control group, the copy that proves the other mode
                 // would have had nothing to do either.
-                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, _settings.Mode, source)}");
+                Program.Log($"clean skipped, no change needed: {ClipboardSummary.Describe(text, _settings.Mode)}");
                 Trace("  no change needed (idempotent)");
                 if (showNotification) _icon.ShowBalloonTip(1200, "Pastefix", "沒有需要清洗的內容", ToolTipIcon.Info);
                 return false;
@@ -244,38 +243,12 @@ public sealed class TrayApplication : ApplicationContext
         _lastClean.Record(text, cleaned);
         // The permanent record of a clean that worked. Until this existed only
         // failures were ever written here, so a working tool left no trace.
-        Program.Log($"cleaned: {ClipboardSummary.Describe(text, result, _settings.Mode, source)}");
+        Program.Log($"cleaned: {ClipboardSummary.Describe(text, result, _settings.Mode)}");
         Trace($"  wrote back [{cleaned}]");
 
         if (showNotification)
-        {
-            string message = result.StructureGuard is null
-                ? "剪貼簿已清洗，可以直接貼上"
-                : $"這是 {result.StructureGuard} 程式碼區塊，已保留換行結構（未壓成單行）";
-            _icon.ShowBalloonTip(1200, "Pastefix", message, ToolTipIcon.Info);
-        }
+            _icon.ShowBalloonTip(1200, "Pastefix", "剪貼簿已清洗，可以直接貼上", ToolTipIcon.Info);
         return true;
-    }
-
-    /// <summary>
-    /// What the clipboard's HTML says the copy was. Failing to read it only
-    /// means the copy is treated as plain text — exactly what every copy was
-    /// before the HTML was read — so the failure is logged and the clean goes
-    /// on rather than stopping on a format it never depended on.
-    /// </summary>
-    private static CopySource ReadCopySource()
-    {
-        try
-        {
-            return Clipboard.ContainsText(TextDataFormat.Html)
-                ? HtmlClipboard.Classify(Clipboard.GetText(TextDataFormat.Html))
-                : CopySource.PlainText;
-        }
-        catch (ExternalException ex)
-        {
-            Program.Log($"clipboard html read failed (0x{ex.HResult:X8}), treated as plain text");
-            return CopySource.PlainText;
-        }
     }
 
     private void RestoreLastClean()

@@ -11,7 +11,6 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 - **Cross-Shell Continuations:** Automatically joins lines ending in `\`, backtick, `&&`, or `|` into single executable commands.
 - **Broken Command Lines:** Reconnects split lines when flags (like `--flag` or `-m`) or operators (`|`) wrap to the next line.
 - **Common Indentation (Dedent):** Strips outer margins while preserving internal relative indents for Python, YAML, and here-strings.
-- **Code Blocks Keep Their Shape:** When a browser copy's HTML marks the whole selection as one code block in a structured language (`<code class="language-python">`, YAML, JSON, …), Force Single Line keeps its line breaks instead of flattening it. Shell blocks and plain-text copies are unaffected.
 - **Empty Pipeline Errors:** Drops empty lines between pipes to prevent PowerShell `EmptyPipeElement` parser errors.
 - **Invisible Characters:** Turns no-break spaces and other space lookalikes into ordinary spaces and removes zero-width characters, so `git commit` copied from a web page is two words again. Anything visible — curly quotes, dashes, the full-width space `　` — is left as copied.
 - **Copied Wrappers:** Removes a markdown fence, a repeated shell prompt (`PS C:\> `, `$ `, `❯ `), or a line-number gutter (`1: `, `42| `) when it wraps the entire copy. A wrapper that does not cover everything — a fence around only part of the text, a single prompt line, a markdown list like `1. Run the installer` — is left untouched.
@@ -24,7 +23,7 @@ Pastefix is a lightweight Windows background tray app. It automatically cleans a
 2. **Paste Directly:** Switch to your terminal (WezTerm, Windows Terminal, PowerShell, etc.) and simply press **`Ctrl+V`** or right-click to paste.
 3. **No Keyboard Interception:** Operates entirely through standard clipboard events — no key injection and no keyboard hooks.
 4. **Undo if It Got It Wrong:** The tray menu's **還原上一次清洗** puts the original copy back, for as long as the clipboard still holds what the clean produced. Nothing is written to disk; the way back lives in memory only.
-5. **See What It Did:** Every clean adds one line to `%APPDATA%\PasteFix\pastefix.log` with sizes, line counts, which wrapper was removed, which mode ran, how many invisible characters were fixed (`chars=`), and what the clipboard's HTML said the copy was (`source=text|html|mixed|code:<language>`) — never the text itself. Copies that needed no cleaning are logged too, so the log can tell "nothing to do" apart from "never ran".
+5. **See What It Did:** Every clean adds one line to `%APPDATA%\PasteFix\pastefix.log` with sizes, line counts, which wrapper was removed, which mode ran, and how many invisible characters were fixed (`chars=`) — never the text itself. Copies that needed no cleaning are logged too, so the log can tell "nothing to do" apart from "never ran".
 
 ### Global Hotkey (optional, off by default)
 
