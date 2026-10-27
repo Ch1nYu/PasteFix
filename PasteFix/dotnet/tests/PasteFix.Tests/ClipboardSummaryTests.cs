@@ -97,4 +97,38 @@ public class ClipboardSummaryTests
             "len=0->0 lines=0->0 containers=none mode=SmartContinuation",
             ClipboardSummary.Describe(null, null, [], ProcessingMode.SmartContinuation));
     }
+
+    [Fact]
+    public void DescribeForACleanAppendsCharacterFixesAndTheSource()
+    {
+        // The new fields go after mode= so every query written against the
+        // older lines still matches.
+        string summary = ClipboardSummary.Describe(
+            "git\u00A0commit",
+            new ClipboardResult("git commit", [], CharactersFixed: 1),
+            ProcessingMode.SmartContinuation,
+            new CopySource(SourceKind.Code, "bash"));
+
+        Assert.Equal("len=10->10 lines=1->1 containers=none mode=SmartContinuation chars=1 source=code:bash", summary);
+    }
+
+    [Fact]
+    public void DescribeForACleanNamesTheGuardThatKeptStructure()
+    {
+        string summary = ClipboardSummary.Describe(
+            "a\nb",
+            new ClipboardResult("a\nb!", [], StructureGuard: "python"),
+            ProcessingMode.SingleLine,
+            new CopySource(SourceKind.Code, "python"));
+
+        Assert.Equal("len=3->4 lines=2->2 containers=none mode=SingleLine chars=0 source=code:python guard=python", summary);
+    }
+
+    [Fact]
+    public void DescribeForASkippedCopyNamesTheSource()
+    {
+        Assert.Equal(
+            "len=17 mode=SmartContinuation source=html",
+            ClipboardSummary.Describe("echo one\necho two", ProcessingMode.SmartContinuation, new CopySource(SourceKind.Html, null)));
+    }
 }

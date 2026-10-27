@@ -40,7 +40,13 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
         to skip self-triggered clipboard updates)
                       │
                       ▼
+        HtmlClipboard.Classify (pure, CF_HTML → CopySource)
+            └── text | html | mixed | code:<language>
+                      │
+                      ▼
        ClipboardTransformer.cs (Mode Dispatcher)
+            ├── CharacterNormalizer.Clean (pure)
+            │   └── NBSP & space lookalikes → space, zero-width → removed
             └── ContainerStripper.Strip (pure)
                 ├── Fence       (``` or ~~~ wrapping the whole copy)
                 ├── Prompt      (PS C:\> / $ / ❯ on every non-blank line, 2+)
@@ -51,6 +57,7 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
                       │   ├── FirstLineMissedTheMargin
                       │   └── JoinContinuations
                       └── SingleLine → SingleLineNormalizer.Flatten
+                          (unless CopySource.KeepsLineStructure → Normalize, guard=<language>)
                       │
                       ▼
        ClipboardWriteback.Decide (pure)
@@ -73,6 +80,8 @@ Pastefix is a zero-friction, lightweight Windows background utility (.NET 10 Win
 |---|---|---|
 | **Program.cs** | `PasteFix/dotnet/src/PasteFix/Program.cs` | Entry point. Manages `PasteFix_App_SingleInstance_Mutex` to ensure strictly one running instance and handles unhandled exception logging. |
 | **Normalizer.cs** | `PasteFix/dotnet/src/PasteFix/Normalizer.cs` | Pure, fully unit-tested normalization logic (`Dedent` + `Normalize`). 100% deterministic and stateless. Also hosts `SplitLines` and the shared `ScanState` / `ScanLine` quote-and-bracket scanner used by `SingleLineNormalizer`. |
+| **CharacterNormalizer.cs** | `PasteFix/dotnet/src/PasteFix/CharacterNormalizer.cs` | Pure. Replaces space lookalikes (U+00A0, U+2000–200A, U+202F, U+205F) with a space and removes U+200B, U+2060, U+FEFF, U+00AD. Never touches anything visible (curly quotes, dashes, U+3000) or meaningful (ZWJ/ZWNJ). Returns the fix count for `chars=`. |
+| **HtmlClipboard.cs** | `PasteFix/dotnet/src/PasteFix/HtmlClipboard.cs` | Pure. Classifies the CF_HTML fragment: one `<pre>`/`<code>` covering the whole selection is `Code` with a language from a fixed list (else `other` — the log never carries page markup); anything less is `Mixed`, `Html` or `PlainText` and changes no behavior. `KeepsLineStructure` is the only thing that alters a transform. |
 | **ContainerStripper.cs** | `PasteFix/dotnet/src/PasteFix/ContainerStripper.cs` | Pure wrapper removal: a markdown fence, a repeated shell prompt, or a line-number gutter. Removes a wrapper only when it provably covers the whole copy; text with no wrapper is returned byte for byte. |
 | **SingleLineNormalizer.cs** | `PasteFix/dotnet/src/PasteFix/SingleLineNormalizer.cs` | Explicitly flattens physical lines and removes only scanner-confirmed `\` or backtick continuation markers. |
 | **ClipboardTransformer.cs** | `PasteFix/dotnet/src/PasteFix/ClipboardTransformer.cs` | Strips the container first, then selects exactly one transformer from the persisted `ProcessingMode`. Returns a `ClipboardResult` (text + which containers were stripped) so the log can report what happened without naming content. |
@@ -144,7 +153,7 @@ Always run all test gates before publishing or merging:
 ```powershell
 dotnet test PasteFix/dotnet/PasteFix.slnx -c Release --no-restore
 ```
-- Target: 150 tests covering Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
+- Target: 212 tests covering invisible-character fixes, CF_HTML classification and the Single Line structure guard, Dedent, margin repair, SmartContinuation, SingleLine flattening, container stripping, mode dispatch/settings, write-back decisions, restore decisions, the log summary format, quote/bracket guards, YAML/Python behavior, idempotency, and OwnWriteGate.
 
 ### 2. Automated Machine Smoke Test
 ```powershell

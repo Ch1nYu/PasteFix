@@ -7,29 +7,47 @@ public enum ProcessingMode
 }
 
 /// <summary>
-/// The outcome of one clipboard transformation: the text to paste, and which
-/// wrappers were removed on the way. The wrappers are reported so the caller can
-/// say what it did without ever naming the content.
+/// The outcome of one clipboard transformation: the text to paste, which
+/// wrappers were removed on the way, how many invisible characters were fixed,
+/// and — when Force Single Line was set aside for a structured code block — the
+/// language that caused it. All of it is reported so the caller can say what it
+/// did without ever naming the content.
 /// </summary>
-public sealed record ClipboardResult(string Text, IReadOnlyList<ContainerKind> Stripped);
+public sealed record ClipboardResult(
+    string Text,
+    IReadOnlyList<ContainerKind> Stripped,
+    int CharactersFixed = 0,
+    string? StructureGuard = null);
 
 public static class ClipboardTransformer
 {
     /// <summary>
-    /// Strips the wrapper the copy arrived in, then applies the selected mode.
-    /// The wrapper goes first because a fence or a prompt gutter is a frame
-    /// around the text, and the mode rules should see the text itself.
+    /// Fixes invisible characters, strips the wrapper the copy arrived in, then
+    /// applies the selected mode. Characters go first so a prompt or a fence
+    /// indented with no-break spaces is still recognised; the wrapper goes
+    /// before the mode because a fence or a prompt gutter is a frame around the
+    /// text, and the mode rules should see the text itself.
+    ///
+    /// Force Single Line is deliberately destructive to Python, YAML and the
+    /// like. When the page the copy came from marked it as one block of such a
+    /// language, flattening can only break it, so that block goes through
+    /// Smart Continuation instead and the result names the guard.
     /// </summary>
-    public static ClipboardResult Transform(string input, ProcessingMode mode)
+    public static ClipboardResult Transform(string input, ProcessingMode mode, CopySource? source = null)
     {
-        (string stripped, IReadOnlyList<ContainerKind> kinds) = ContainerStripper.Strip(input);
+        (string chars, int fixedCount) = CharacterNormalizer.Clean(input);
+        (string stripped, IReadOnlyList<ContainerKind> kinds) = ContainerStripper.Strip(chars);
+
+        string? guard = mode == ProcessingMode.SingleLine && source is { KeepsLineStructure: true }
+            ? source.Language
+            : null;
 
         string text = mode switch
         {
-            ProcessingMode.SingleLine => SingleLineNormalizer.Flatten(stripped),
+            ProcessingMode.SingleLine when guard is null => SingleLineNormalizer.Flatten(stripped),
             _ => Normalizer.Normalize(stripped),
         };
 
-        return new ClipboardResult(text, kinds);
+        return new ClipboardResult(text, kinds, fixedCount, guard);
     }
 }

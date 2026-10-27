@@ -53,4 +53,20 @@ public static class ClipboardSummary
         }
         return lines;
     }
+
+    /// <summary>
+    /// A skipped copy, with where it came from. Skips are the control group, so
+    /// they carry the source too.
+    /// </summary>
+    public static string Describe(string? text, ProcessingMode mode, CopySource source) =>
+        $"{Describe(text, mode)} source={source}";
+
+    /// <summary>
+    /// A clean, with the character fixes and the source appended after mode= so
+    /// every query written against the older lines still matches. guard= only
+    /// appears when Force Single Line was set aside for a structured code block.
+    /// </summary>
+    public static string Describe(string? before, ClipboardResult result, ProcessingMode mode, CopySource source) =>
+        $"{Describe(before, result.Text, result.Stripped, mode)} chars={result.CharactersFixed} source={source}" +
+        (result.StructureGuard is null ? "" : $" guard={result.StructureGuard}");
 }
